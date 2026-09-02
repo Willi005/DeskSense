@@ -16,7 +16,9 @@
     "start": "npm run build && electron .",
     "icon": "node scripts/make-icon.mjs",
     "pack": "npm run icon && npm run build && electron-builder --dir",
-    "dist": "npm run icon && npm run build && electron-builder --win"
+    "dist": "npm run icon && npm run build && electron-builder",
+    "dist:win": "npm run icon && npm run build && electron-builder --win",
+    "dist:linux": "npm run icon && npm run build && electron-builder --linux"
   },
   "build": {
     "appId": "com.monitoreo.escritorio",
@@ -36,6 +38,15 @@
         "nsis"
       ],
       "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "synopsis": "Monitoreo ambiental inteligente del escritorio",
+      "artifactName": "DeskSense-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
