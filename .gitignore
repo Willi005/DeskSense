@@ -10,3 +10,6 @@ dist-electron
 release
 build/icon.ico
 build/icon.png
+
+# Espacio de trabajo temporal de ejecución de planes (registro, informes, diffs)
+.superpowers

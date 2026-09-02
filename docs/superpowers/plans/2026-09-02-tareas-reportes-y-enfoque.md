@@ -12,7 +12,7 @@
 
 ## Restricciones globales
 
-- El código, los identificadores y los comentarios técnicos van en **inglés**; los textos visibles para el usuario y los mensajes de commit van en **español**.
+- Los **identificadores del código** —variables, funciones, constantes, claves— van en **inglés**. Los **comentarios** van en **español**, siguiendo la convención ya establecida en todo el repositorio (`src/lib/sensors.js`, `electron/main.cjs`, `scripts/make-icon.mjs`). Los textos visibles para el usuario y los mensajes de commit van en **español**.
 - Los commits **no llevan co-autoría ni atribución a herramientas de IA**.
 - Nomenclatura de commits: `feat:`, `fix:`, `chore:` seguido de una descripción breve en español.
 - Gitflow: se trabaja en `feature/tareas-y-reportes`, creada desde `develop` **después** de integrar `feature/compatibilidad-linux`.
@@ -658,8 +658,10 @@ Esperado: la escritura devuelve `true` y la lectura devuelve el objeto con la ta
 - [ ] **Paso 5: Verificar la tolerancia a archivo corrupto**
 
 ```bash
-echo "{ esto no es json" > "$HOME/.config/DeskSense/desksense-data.json"
+echo "{ esto no es json" > "$HOME/.config/desksense/desksense-data.json"
 ```
+
+> La carpeta es `desksense` en minúsculas, no `DeskSense`. Está verificado: `app.getPath('userData')` se resuelve desde el campo `name` de `package.json`, y el `app.setName('DeskSense')` que añade la capa de compatibilidad con Linux se ejecuta después de `whenReady`, así que **no** mueve la carpeta de datos. Eso es deseable: cambiarla dejaría huérfanos los datos de cualquier instalación previa.
 
 Reabrir la aplicación y leer de nuevo.
 
