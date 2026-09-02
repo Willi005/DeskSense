@@ -65,9 +65,11 @@ npm start
 ## Empaquetar (instalador)
 
 ```bash
-npm run dist     # genera build de Vite + instalador NSIS en release/
-npm run pack     # solo empaqueta (sin instalador), útil para probar
-npm run icon     # regenera build/icon.png e icon.ico desde build/icon.svg
+npm run dist        # empaqueta para la plataforma anfitriona (NSIS en Windows, AppImage en Linux)
+npm run dist:win    # fuerza el instalador NSIS de Windows
+npm run dist:linux  # fuerza el AppImage de Linux
+npm run pack        # solo empaqueta (sin instalador), útil para probar
+npm run icon        # regenera build/icon.png e icon.ico desde build/icon.svg
 ```
 
 > **Nota (OneDrive):** si el proyecto está dentro de una carpeta sincronizada con
@@ -77,6 +79,31 @@ npm run icon     # regenera build/icon.png e icon.ico desde build/icon.svg
 > ```bash
 > npx electron-builder --win -c.directories.output=C:/Users/<tú>/AppData/Local/Temp/desksense-release
 > ```
+
+## Ejecución en Linux
+
+El proyecto se desarrolló en Windows y funciona igual en Linux, con tres
+particularidades del entorno:
+
+- **npm 11 avisa de los install scripts no revisados.** El campo `allowScripts`
+  de `package.json` marca como revisados los de `electron` y `esbuild` y silencia
+  el aviso; no es necesario para que descarguen su binario.
+- **El instalador de Electron puede no extraer su binario.** Descarga el ZIP a
+  `~/.cache/electron` y termina sin descomprimirlo. El script
+  `scripts/postinstall.mjs` lo detecta y lo repara automáticamente tras cada
+  `npm install`. Si aun así falta, ejecutar `npm run postinstall`.
+- **La reparación automática necesita `unzip` o `bsdtar` instalados en el
+  sistema.** Si faltan ambos, `scripts/postinstall.mjs` avisa por consola y no
+  repara nada; instala cualquiera de los dos y ejecuta `npm run postinstall`.
+
+Para generar un ejecutable distribuible:
+
+```bash
+npm run dist:linux   # genera release/DeskSense-<versión>.AppImage
+```
+
+`npm run dist:win` sigue generando el instalador NSIS, pero requiere ejecutarse
+en Windows o disponer de `wine`.
 
 ## Configuración
 
