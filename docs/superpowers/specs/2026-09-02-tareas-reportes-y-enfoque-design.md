@@ -133,8 +133,7 @@ Forma del archivo:
 {
   "version": 1,
   "tasks": [],
-  "focusWindows": [],
-  "reportCache": {}
+  "focusWindows": []
 }
 ```
 
@@ -308,11 +307,15 @@ Botón opcional que envía el reporte ya calculado al modelo activo y devuelve d
 conclusiones en lenguaje natural. Reutiliza `callModel`. Si no hay API key o la llamada
 falla, se muestra un resumen de plantilla construido con las mismas cifras.
 
-### 8.5 Caché
+### 8.5 Sin caché de reportes
 
-Los reportes de períodos ya cerrados se guardan en `reportCache` del store, indexados por
-fecha, para no volver a consultar ThingsBoard por datos que ya no pueden cambiar. El
-período en curso siempre se recalcula.
+Se descarta deliberadamente cachear los reportes. Un caché solo aporta valor para períodos
+ya cerrados, pero los dos períodos que ofrece la interfaz —hoy y la semana en curso— están
+siempre abiertos y deben recalcularse en cada visita. Guardar un caché que nunca se leería
+sería código muerto desde el primer día.
+
+Si en el futuro se añadiera un selector de períodos históricos, este es el punto donde
+introducirlo.
 
 ---
 
