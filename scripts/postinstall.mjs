@@ -3,7 +3,14 @@
 // dejando node_modules/electron/dist vacío y la aplicación imposible de arrancar.
 // Este script es idempotente y nunca falla: si no puede reparar, avisa y sale
 // con código 0 para no romper `npm install` en otras plataformas.
-import { existsSync, mkdirSync, readdirSync, chmodSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  chmodSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
@@ -34,11 +41,29 @@ function extract(zip, dir) {
   return null
 }
 
-// Busca el ZIP ya descargado en la caché de Electron. La caché usa un directorio
-// por hash de descarga, así que hay que recorrerlos.
+// Versión de Electron que este proyecto espera, leída de su propio package.json.
+function installedVersion() {
+  try {
+    return JSON.parse(readFileSync(join(electronDir, 'package.json'), 'utf8')).version || null
+  } catch {
+    return null
+  }
+}
+
+// Busca en la caché el ZIP de la versión exacta que el proyecto necesita. La
+// caché de Electron es COMPARTIDA entre todos los proyectos de la máquina y usa
+// un directorio por hash de descarga, así que puede contener ZIPs de varias
+// versiones a la vez: coger el primero que aparezca instalaría en silencio el
+// Electron de otro proyecto. Si no se puede determinar la versión esperada, se
+// prefiere no reparar antes que instalar una versión desconocida.
 function findCachedZip() {
+  const version = installedVersion()
+  if (!version) return null
+
   const cacheRoot = join(homedir(), '.cache', 'electron')
   if (!existsSync(cacheRoot)) return null
+
+  const wanted = `electron-v${version}-linux-x64.zip`
   for (const entry of readdirSync(cacheRoot)) {
     let files = []
     try {
@@ -46,8 +71,7 @@ function findCachedZip() {
     } catch {
       continue
     }
-    const zip = files.find((f) => f.startsWith('electron-v') && f.endsWith('-linux-x64.zip'))
-    if (zip) return join(cacheRoot, entry, zip)
+    if (files.includes(wanted)) return join(cacheRoot, entry, wanted)
   }
   return null
 }
@@ -60,7 +84,7 @@ async function main() {
   const zip = findCachedZip()
   if (!zip) {
     console.warn(
-      '[postinstall] Falta el binario de Electron y no hay ZIP en la caché. Ejecuta: npm rebuild electron'
+      '[postinstall] Falta el binario de Electron y no hay en la caché un ZIP de la versión esperada. Ejecuta: npm rebuild electron'
     )
     return
   }
