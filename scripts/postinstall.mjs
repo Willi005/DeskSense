@@ -21,12 +21,13 @@ const binary = join(distDir, 'electron')
 const pathFile = join(electronDir, 'path.txt')
 
 // El binario puede estar bien extraído pero con path.txt mal escrito, lo que
-// rompe require('electron') sin que nada más lo delate. Ambas cosas deben estar
-// bien para dar la instalación por buena.
+// rompe require('electron') sin que nada más lo delate. La comparación es
+// EXACTA, sin trim: `index.js` de electron concatena el contenido tal cual, así
+// que un salto de línea final basta para romper la resolución del módulo.
 function isHealthy() {
   if (!existsSync(binary)) return false
   try {
-    return readFileSync(pathFile, 'utf8').trim() === 'electron'
+    return readFileSync(pathFile, 'utf8') === 'electron'
   } catch {
     return false
   }
