@@ -78,6 +78,28 @@ npm run icon     # regenera build/icon.png e icon.ico desde build/icon.svg
 > npx electron-builder --win -c.directories.output=C:/Users/<tú>/AppData/Local/Temp/desksense-release
 > ```
 
+## Ejecución en Linux
+
+El proyecto se desarrolló en Windows y funciona igual en Linux, con dos
+particularidades del entorno:
+
+- **npm 11 bloquea los install scripts.** El campo `allowScripts` de
+  `package.json` autoriza los de `electron` y `esbuild`, necesarios para que
+  ambos descarguen su binario.
+- **El instalador de Electron puede no extraer su binario.** Descarga el ZIP a
+  `~/.cache/electron` y termina sin descomprimirlo. El script
+  `scripts/postinstall.mjs` lo detecta y lo repara automáticamente tras cada
+  `npm install`. Si aun así falta, ejecutar `npm run postinstall`.
+
+Para generar un ejecutable distribuible:
+
+```bash
+npm run dist:linux   # genera release/DeskSense-<versión>.AppImage
+```
+
+`npm run dist:win` sigue generando el instalador NSIS, pero requiere ejecutarse
+en Windows o disponer de `wine`.
+
 ## Configuración
 
 Abre **Configuración** dentro de la app:
