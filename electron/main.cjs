@@ -8,7 +8,7 @@ function createWindow() {
     width: 1440,
     height: 1024,
     minWidth: 1024,
-    minHeight: 1024,
+    minHeight: 720,
     center: true,
     show: false,
     frame: false,
@@ -63,7 +63,7 @@ ipcMain.on('notify', (e, payload) => {
   try {
     if (!Notification.isSupported()) return
     const n = new Notification({
-      title: (payload && payload.title) || 'Monitoreo Inteligente',
+      title: (payload && payload.title) || 'DeskSense',
       body: (payload && payload.body) || '',
       silent: false,
     })
@@ -82,6 +82,9 @@ ipcMain.on('notify', (e, payload) => {
 })
 
 app.whenReady().then(() => {
+  // Nombre con el que el sistema identifica a la app. En Linux es lo que
+  // aparece como emisor de las notificaciones: sin esto se muestra "Electron".
+  app.setName('DeskSense')
   // Necesario para que las notificaciones nativas se muestren en Windows.
   if (process.platform === 'win32') app.setAppUserModelId('com.monitoreo.escritorio')
   createWindow()
