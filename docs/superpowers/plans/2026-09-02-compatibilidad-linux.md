@@ -417,9 +417,9 @@ En `README.md`, añadir una sección tras las instrucciones de instalación exis
 El proyecto se desarrolló en Windows y funciona igual en Linux, con dos
 particularidades del entorno:
 
-- **npm 11 bloquea los install scripts.** El campo `allowScripts` de
-  `package.json` autoriza los de `electron` y `esbuild`, necesarios para que
-  ambos descarguen su binario.
+- **npm 11 avisa de los install scripts no revisados.** El campo `allowScripts`
+  de `package.json` marca como revisados los de `electron` y `esbuild` y silencia
+  el aviso; no es necesario para que descarguen su binario.
 - **El instalador de Electron puede no extraer su binario.** Descarga el ZIP a
   `~/.cache/electron` y termina sin descomprimirlo. El script
   `scripts/postinstall.mjs` lo detecta y lo repara automáticamente tras cada

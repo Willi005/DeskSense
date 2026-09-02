@@ -71,8 +71,9 @@ de la funcionalidad nueva.
 
 ### 5.1 Problemas detectados
 
-1. **npm 11 bloquea los install scripts.** Ni Electron ni esbuild descargaban su binario,
-   de modo que ni la aplicación ni Vite podían ejecutarse.
+1. **npm 11 avisa de los install scripts no revisados.** No bloquea su ejecución, solo
+   emite un aviso; el motivo real de que Electron no dejara un binario utilizable es
+   el del punto 2 (el extractor roto).
 2. **El `postinstall` de Electron falla en silencio.** Descarga el ZIP de 106 MB a
    `~/.cache/electron` y termina con código 0 sin extraer nada. Hubo que descomprimirlo a
    mano; sin automatizarlo, el entorno queda roto tras cada `npm install`.
