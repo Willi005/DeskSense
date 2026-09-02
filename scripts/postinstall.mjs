@@ -99,8 +99,12 @@ async function main() {
   }
 
   chmodSync(binary, 0o755)
-  // electron-builder y el cargador del paquete leen esta ruta.
-  writeFileSync(join(electronDir, 'path.txt'), 'dist/electron')
+  // `index.js` de electron resuelve el binario como
+  // path.join(__dirname, 'dist', <contenido de path.txt>), así que este archivo
+  // debe contener SOLO el nombre del ejecutable. Escribir 'dist/electron' aquí
+  // produce la ruta duplicada 'dist/dist/electron' y rompe `require('electron')`,
+  // es decir `npm run dev` y `npm start`, aunque el binario esté bien extraído.
+  writeFileSync(join(electronDir, 'path.txt'), 'electron')
   console.log(`[postinstall] Binario de Electron extraído desde la caché (${used}).`)
 }
 
