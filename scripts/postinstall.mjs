@@ -18,6 +18,19 @@ import { execFileSync } from 'node:child_process'
 const electronDir = join(process.cwd(), 'node_modules', 'electron')
 const distDir = join(electronDir, 'dist')
 const binary = join(distDir, 'electron')
+const pathFile = join(electronDir, 'path.txt')
+
+// El binario puede estar bien extraído pero con path.txt mal escrito, lo que
+// rompe require('electron') sin que nada más lo delate. Ambas cosas deben estar
+// bien para dar la instalación por buena.
+function isHealthy() {
+  if (!existsSync(binary)) return false
+  try {
+    return readFileSync(pathFile, 'utf8').trim() === 'electron'
+  } catch {
+    return false
+  }
+}
 
 // Extractores del sistema, en orden de preferencia. Deliberadamente NO se usa
 // extract-zip: su dependencia transitiva fd-slicer, sin mantenimiento desde
@@ -79,12 +92,19 @@ function findCachedZip() {
 async function main() {
   if (process.platform !== 'linux') return
   if (!existsSync(electronDir)) return
-  if (existsSync(binary)) return
+  if (isHealthy()) return
+
+  // Binario correcto pero path.txt corrupto: basta con reescribirlo.
+  if (existsSync(binary)) {
+    writeFileSync(pathFile, 'electron')
+    console.log('[postinstall] path.txt de Electron corregido.')
+    return
+  }
 
   const zip = findCachedZip()
   if (!zip) {
     console.warn(
-      '[postinstall] Falta el binario de Electron y no hay en la caché un ZIP de la versión esperada. Ejecuta: npm rebuild electron'
+      '[postinstall] Falta el binario de Electron y no hay en la caché un ZIP de la versión esperada. Ejecuta: npm rebuild electron && npm run postinstall'
     )
     return
   }
@@ -104,7 +124,7 @@ async function main() {
   // debe contener SOLO el nombre del ejecutable. Escribir 'dist/electron' aquí
   // produce la ruta duplicada 'dist/dist/electron' y rompe `require('electron')`,
   // es decir `npm run dev` y `npm start`, aunque el binario esté bien extraído.
-  writeFileSync(join(electronDir, 'path.txt'), 'electron')
+  writeFileSync(pathFile, 'electron')
   console.log(`[postinstall] Binario de Electron extraído desde la caché (${used}).`)
 }
 

@@ -82,6 +82,11 @@ ipcMain.on('notify', (e, payload) => {
 })
 
 app.whenReady().then(() => {
+  // Fija la carpeta de datos ANTES de renombrar la app. Hoy setName no la mueve
+  // porque Electron ya resolvió userData antes de ejecutar este JS, pero esa
+  // garantía es incidental: fijarla explícitamente evita que un cambio de orden
+  // aquí, o de Electron, deje huérfanas las credenciales y las claves guardadas.
+  app.setPath('userData', app.getPath('userData'))
   // Nombre con el que el sistema identifica a la app. En Linux es lo que
   // aparece como emisor de las notificaciones: sin esto se muestra "Electron".
   app.setName('DeskSense')
