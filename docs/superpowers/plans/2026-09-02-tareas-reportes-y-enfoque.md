@@ -2889,7 +2889,12 @@ export function nextFocusState(state, { now, optimal }) {
       if (now - state.since < FOCUS_HOLD_MS) return none
       // Se activa igualmente durante el enfriamiento: así la ventana queda
       // registrada para el reporte aunque no se avise a la persona.
-      const notify = now - state.lastNotifyTs >= FOCUS_COOLDOWN_MS
+      // `lastNotifyTs === 0` significa "nunca se ha notificado" y debe avisar sin
+      // exigir el enfriamiento. Sin ese caso explícito, la resta funcionaría por
+      // accidente con marcas de tiempo reales (epoch, del orden de 1,8e12) pero
+      // no con las pequeñas de las pruebas, escondiendo la intención del diseño
+      // detrás de la magnitud de los números.
+      const notify = state.lastNotifyTs === 0 || now - state.lastNotifyTs >= FOCUS_COOLDOWN_MS
       return {
         state: { ...state, phase: 'active', lastNotifyTs: notify ? now : state.lastNotifyTs },
         notify,
