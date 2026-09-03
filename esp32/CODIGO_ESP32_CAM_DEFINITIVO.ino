@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <math.h>
+#include <time.h>
 
 // Credenciales de red y ThingsBoard.
 // Viven en secrets.h, que NO se versiona. Copia secrets.example.h a secrets.h y
@@ -16,6 +17,17 @@
 
 // Topic MQTT de ThingsBoard para telemetria.
 #define TB_TOPIC "v1/devices/me/telemetry"
+
+// Servidor NTP. El dispositivo sella cada envio con su propia marca de tiempo
+// para que ThingsBoard no use la hora del servidor: si el reloj del servidor
+// esta desfasado, el historial y los reportes diarios y semanales de la
+// aplicacion quedan corridos, y una tarea completada a las 22:00 puede acabar
+// contando en el dia siguiente.
+#define NTP_SERVER "pool.ntp.org"
+
+// Umbral para dar el reloj por sincronizado (1 nov 2023 en epoch). Antes de
+// sincronizar, time() devuelve valores cercanos a 0 (ano 1970).
+#define EPOCH_MINIMO_VALIDO 1698796800UL
 
 // Evitar GPIO0, 2, 5, 12 y 15 (strapping pins que afectan el arranque),
 // y los pines ADC2 (GPIO25-27, 32-39 son ADC1 y funcionan con WiFi activo).
@@ -69,9 +81,14 @@ String clasificarRuido(float db);
 bool medirSPS30(float &pm1, float &pm2, float &pm4, float &pm10);
 void conectarWifi();
 void conectarMQTT();
+void sincronizarReloj(int intentosMaximos);
+bool publicarConTs(const char *valores);
 void publicarDatos(float distancia, float luz, float ruidoDb, float temp,
                    float hum, float pm1, float pm2, float pm4, float pm10);
 void publicarEstado(float distancia, bool presencia);
+
+// Queda en true cuando NTP respondio y el reloj tiene una fecha creible.
+static bool relojSincronizado = false;
 
 void setup()
 {
@@ -105,6 +122,7 @@ void setup()
 
   // Conexion WiFi y configuracion del broker MQTT.
   conectarWifi();
+  sincronizarReloj(20);
   mqtt.setServer(TB_HOST, TB_PORT);
 
   // Tiempo para que el ventilador interno del SPS30 alcance
@@ -320,6 +338,58 @@ void conectarMQTT()
   }
 }
 
+// Pide la hora a un servidor NTP. Se llama con muchos intentos al arrancar y
+// con pocos al reconectar, para no bloquear el loop mas de lo necesario.
+void sincronizarReloj(int intentosMaximos)
+{
+  if (relojSincronizado)
+  {
+    return;
+  }
+
+  // Se pide en UTC (offset 0): ThingsBoard espera epoch UTC y la conversion a
+  // hora local la hace la aplicacion de escritorio.
+  configTime(0, 0, NTP_SERVER);
+
+  Serial.print("Sincronizando reloj por NTP ");
+  for (int i = 0; i < intentosMaximos && time(nullptr) < EPOCH_MINIMO_VALIDO; i++)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  relojSincronizado = time(nullptr) >= EPOCH_MINIMO_VALIDO;
+  if (relojSincronizado)
+  {
+    Serial.println("Reloj sincronizado. Los envios llevaran marca de tiempo propia.");
+  }
+  else
+  {
+    Serial.println("NTP no respondio. ThingsBoard sellara con la hora del servidor.");
+  }
+}
+
+// Publica el JSON de valores envuelto con la marca de tiempo del dispositivo,
+// en el formato {"ts":<ms>,"values":{...}} que acepta ThingsBoard.
+//
+// Si el reloj todavia no sincronizo se envia el objeto plano y el servidor sella
+// con su propia hora. Es deliberado: una hora aproximada del servidor es mucho
+// menos danina que fechar la telemetria en 1970, que ensuciaria el historial y
+// dejaria los reportes sin datos en el periodo real.
+bool publicarConTs(const char *valores)
+{
+  if (!relojSincronizado)
+  {
+    return mqtt.publish(TB_TOPIC, valores);
+  }
+
+  char envoltura[640];
+  unsigned long long ms = (unsigned long long)time(nullptr) * 1000ULL;
+  snprintf(envoltura, sizeof(envoltura), "{\"ts\":%llu,\"values\":%s}", ms, valores);
+  return mqtt.publish(TB_TOPIC, envoltura);
+}
+
 // Arma el payload JSON con todos los valores y lo publica en el topic
 // de telemetria de ThingsBoard. Cada clave se convierte en una serie
 // de tiempo independiente en la plataforma.
@@ -347,7 +417,7 @@ void publicarDatos(float distancia, float luz, float ruidoDb, float temp,
              distancia, luz, ruidoDb, temp, hum, pm1, pm2, pm4, pm10);
   }
 
-  bool ok = mqtt.publish(TB_TOPIC, payload);
+  bool ok = publicarConTs(payload);
   Serial.print("MQTT publish: ");
   Serial.println(ok ? "OK" : "FALLO");
   Serial.print("Payload: ");
@@ -362,7 +432,7 @@ void publicarEstado(float distancia, bool presencia)
   char payload[96];
   snprintf(payload, sizeof(payload),
            "{\"distancia\":%.1f,\"presencia\":%d}", distancia, presencia ? 1 : 0);
-  bool ok = mqtt.publish(TB_TOPIC, payload);
+  bool ok = publicarConTs(payload);
   Serial.print("MQTT estado: ");
   Serial.println(ok ? "OK" : "FALLO");
 }
