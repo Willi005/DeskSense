@@ -26,38 +26,72 @@ export function TasksProvider({ children }) {
       .read()
       .then((data) => {
         if (cancelled) return
-        setTasks(data?.tasks || [])
-        setFocusWindows(data?.focusWindows || [])
+        // Se fusiona en vez de reemplazar: si la persona añadió algo mientras la
+        // lectura estaba en vuelo, reemplazar lo descartaría en silencio.
+        setTasks((prev) => [...prev, ...(data?.tasks || [])])
+        setFocusWindows((prev) => [...prev, ...(data?.focusWindows || [])])
+        // La escritura solo se habilita tras una lectura CORRECTA. Si la lectura
+        // falla y aun así permitiéramos escribir, el primer cambio guardaría el
+        // estado vacío encima del archivo real y borraría los datos.
+        loadedRef.current = true
       })
       .catch(() => {})
       .finally(() => {
-        if (cancelled) return
-        setLoading(false)
-        loadedRef.current = true
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
   }, [])
 
+  // Espejo del estado para poder volcarlo desde manejadores que no se recrean
+  // en cada render (desmontaje y cierre de ventana).
+  const stateRef = useRef({ tasks, focusWindows })
+  stateRef.current = { tasks, focusWindows }
+
+  const persist = useCallback(() => {
+    const store = typeof window !== 'undefined' ? window.electronAPI?.store : null
+    if (!store || !loadedRef.current) return
+    const { tasks, focusWindows } = stateRef.current
+    // Lectura previa para conservar cualquier clave del archivo que este
+    // contexto no gestione.
+    store
+      .read()
+      .then((current) => store.write({ ...current, version: 1, tasks, focusWindows }))
+      .catch(() => {})
+  }, [])
+
   // Persistencia con debounce. No escribe antes de la carga inicial, para no
   // sobrescribir el archivo con el estado vacío del primer render.
   useEffect(() => {
     if (!loadedRef.current) return
-    const store = typeof window !== 'undefined' ? window.electronAPI?.store : null
-    if (!store) return
-
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
-      store.read().then((current) => {
-        store.write({ ...current, version: 1, tasks, focusWindows }).catch(() => {})
-      })
+      timerRef.current = null
+      persist()
     }, WRITE_DEBOUNCE_MS)
-
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [tasks, focusWindows])
+  }, [tasks, focusWindows, persist])
+
+  // Volcado de la escritura pendiente al desmontar o al cerrar la ventana. Sin
+  // esto, cualquier cambio hecho en los últimos WRITE_DEBOUNCE_MS antes de
+  // cerrar la app se descartaba en silencio: el cleanup cancelaba el temporizador
+  // sin llegar a guardar nada.
+  useEffect(() => {
+    const flushPending = () => {
+      if (timerRef.current == null) return
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+      persist()
+    }
+    window.addEventListener('beforeunload', flushPending)
+    return () => {
+      window.removeEventListener('beforeunload', flushPending)
+      flushPending()
+    }
+  }, [persist])
 
   const addTask = useCallback((fields) => {
     const task = createTask(fields)
