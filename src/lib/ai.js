@@ -252,3 +252,38 @@ export async function parseTask({ provider, apiKey, model, input, today }) {
   })
   return parseTaskResponse(text, today, input)
 }
+
+// Interpreta una tarea dictada. Un solo viaje: el modelo transcribe y estructura
+// a la vez, reutilizando el contrato de parseTaskResponse.
+export async function parseTaskFromAudio({ provider, apiKey, model, wavBase64, today }) {
+  if (provider !== 'openrouter') {
+    throw new Error('La entrada por voz requiere un modelo de OpenRouter.')
+  }
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 300,
+      messages: [
+        { role: 'system', content: TASK_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `Hoy es ${today}. Transcribe el audio y conviértelo en la tarea.` },
+            { type: 'input_audio', input_audio: { data: wavBase64, format: 'wav' } },
+          ],
+        },
+      ],
+    }),
+  })
+
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`)
+  const body = await res.json()
+  const text = body?.choices?.[0]?.message?.content || ''
+  return parseTaskResponse(text, today, '')
+}
