@@ -10,6 +10,7 @@ import { SettingsProvider } from './context/SettingsContext.jsx'
 import { TelemetryProvider } from './context/TelemetryContext.jsx'
 import { TasksProvider } from './context/TasksContext.jsx'
 import { AlertsProvider } from './context/AlertsContext.jsx'
+import { FocusProvider } from './context/FocusContext.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -17,7 +18,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <TelemetryProvider>
         <TasksProvider>
           <AlertsProvider>
-            <App />
+            <FocusProvider>
+              <App />
+            </FocusProvider>
           </AlertsProvider>
         </TasksProvider>
       </TelemetryProvider>
