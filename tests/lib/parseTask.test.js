@@ -42,4 +42,10 @@ describe('parseTaskResponse', () => {
     const raw = '{"title":"X","dueDate":"mañana"}'
     expect(parseTaskResponse(raw, TODAY, 'X').dueDate).toBe(TODAY)
   })
+
+  it('cae al respaldo si el título no es texto, en vez de convertirlo en basura', () => {
+    expect(parseTaskResponse('{"title":{"x":1}}', TODAY, 'texto original').title).toBe('texto original')
+    expect(parseTaskResponse('{"title":["a","b"]}', TODAY, 'texto original').title).toBe('texto original')
+    expect(parseTaskResponse('{"title":42}', TODAY, 'texto original').title).toBe('texto original')
+  })
 })
