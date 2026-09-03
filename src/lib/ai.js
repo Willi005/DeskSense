@@ -287,3 +287,28 @@ export async function parseTaskFromAudio({ provider, apiKey, model, wavBase64, t
   const text = body?.choices?.[0]?.message?.content || ''
   return parseTaskResponse(text, today, '')
 }
+
+// Resumen en lenguaje natural del reporte ya calculado. La IA no calcula nada:
+// solo redacta a partir de las cifras que se le entregan.
+export async function summarizeReport({ provider, apiKey, model, report }) {
+  const lines = [
+    `Cumplimiento: ${report.completion.done} de ${report.completion.total} tareas (${report.completion.percent} %).`,
+    `Índice de entorno: ${report.environment.index ?? 'sin datos'}.`,
+    `Promedios: ${Object.entries(report.environment.average)
+      .map(([key, value]) => `${key} ${value}`)
+      .join(', ')}.`,
+    `Ventanas de concentración: ${report.focus.count} (${report.focus.totalMinutes} min).`,
+    `Patrón observado: ${report.pattern.headline}`,
+  ].join('\n')
+
+  return callModel({
+    provider,
+    apiKey,
+    model,
+    system: `${SYSTEM_PROMPT}
+
+Además de tu ámbito habitual, puedes comentar el rendimiento de la persona en sus tareas cuando se te entregue un reporte ya calculado. Redacta de dos a tres conclusiones breves en español, relacionando el ambiente con el cumplimiento. No inventes cifras que no estén en el reporte y no afirmes causalidad: los datos solo muestran coincidencia.`,
+    messages: [{ role: 'user', content: lines }],
+    maxTokens: 400,
+  })
+}
