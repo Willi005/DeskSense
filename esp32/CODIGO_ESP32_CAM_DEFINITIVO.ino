@@ -6,12 +6,13 @@
 #include <math.h>
 
 // Credenciales de red y ThingsBoard.
-// Completar antes de compilar. No subir credenciales reales al repositorio.
-#define WIFI_SSID ""
-#define WIFI_PASSWORD ""
+// Viven en secrets.h, que NO se versiona. Copia secrets.example.h a secrets.h y
+// rellénalo antes de compilar. Manteniéndolas fuera de este archivo es imposible
+// subirlas al repositorio por descuido.
+#include "secrets.h"
+
 #define TB_HOST "200.13.5.20"
 #define TB_PORT 1883
-#define TB_TOKEN ""
 
 // Topic MQTT de ThingsBoard para telemetria.
 #define TB_TOPIC "v1/devices/me/telemetry"
