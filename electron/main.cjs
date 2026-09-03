@@ -32,6 +32,12 @@ function createWindow() {
 
   win.once('ready-to-show', () => win.show())
 
+  // El renderer pide el micrófono para la entrada de tareas por voz. Se conceden
+  // solo los permisos de medios; el resto se deniega.
+  win.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media')
+  })
+
   // Open target=_blank links in the system browser instead of a new window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
