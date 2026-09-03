@@ -1294,12 +1294,20 @@ export function parseTaskResponse(text, today, originalInput) {
     if (!match) return fallback
 
     const parsed = JSON.parse(match[0])
-    const title = String(parsed.title || '').trim()
+    // El título tiene que ser texto de verdad. Con `String(parsed.title)`, un
+    // objeto se convertiría en "[object Object]" y un array en "a,b": basura que
+    // acabaría mostrándose en pantalla en lugar de caer al respaldo y conservar
+    // lo que la persona escribió, que es la garantía central de esta función.
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : ''
     if (!title) return fallback
 
     return {
       title,
       dueDate: DATE_PATTERN.test(parsed.dueDate) ? parsed.dueDate : today,
+      // `priority` y `complexity` se pasan tal cual a propósito: `createTask`
+      // los valida contra su lista blanca y cae a los valores por defecto ante
+      // cualquier cosa inesperada. Validar aquí también sería duplicar esa regla
+      // en dos sitios que tendrían que mantenerse sincronizados.
       priority: parsed.priority,
       complexity: parsed.complexity,
       estimatedMinutes: Number.isFinite(parsed.estimatedMinutes) ? parsed.estimatedMinutes : null,
