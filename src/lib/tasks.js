@@ -11,8 +11,20 @@ const VALID_PRIORITIES = Object.keys(PRIORITY_LABELS)
 const VALID_COMPLEXITIES = Object.keys(COMPLEXITY_LABELS)
 const VALID_SOURCES = ['text', 'voice', 'form']
 
+// Formato de fecha aceptado. Se valida en la entrada para que ninguna tarea
+// quede con una fecha que después no se pueda interpretar.
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+// Una jornada de trabajo como techo razonable: valores negativos, cero o
+// absurdos no son estimaciones, son errores de entrada.
+const MAX_ESTIMATED_MINUTES = 24 * 60
+
 function oneOf(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback
+}
+
+function isValidMinutes(value) {
+  return Number.isFinite(value) && value > 0 && value <= MAX_ESTIMATED_MINUTES
 }
 
 export function createTask({
@@ -27,10 +39,13 @@ export function createTask({
     id: crypto.randomUUID(),
     title: String(title || '').trim(),
     createdAt: Date.now(),
-    dueDate: dueDate || null,
+    // Una fecha con formato inesperado se descarta en vez de guardarse: si se
+    // guardara, `tasksInRange` la convertiría en NaN y la tarea desaparecería de
+    // todos los períodos sin que nada lo delatara.
+    dueDate: DATE_KEY_PATTERN.test(dueDate) ? dueDate : null,
     priority: oneOf(priority, VALID_PRIORITIES, 'medium'),
     complexity: oneOf(complexity, VALID_COMPLEXITIES, 'shallow'),
-    estimatedMinutes: Number.isFinite(estimatedMinutes) ? estimatedMinutes : null,
+    estimatedMinutes: isValidMinutes(estimatedMinutes) ? Math.round(estimatedMinutes) : null,
     status: 'pending',
     completedAt: null,
     source: oneOf(source, VALID_SOURCES, 'form'),

@@ -38,6 +38,19 @@ describe('createTask', () => {
   it('descarta una prioridad inválida y cae al valor por defecto', () => {
     expect(createTask({ title: 'X', priority: 'urgentísima' }).priority).toBe('medium')
   })
+
+  it('descarta una fecha con formato inválido en vez de guardarla', () => {
+    expect(createTask({ title: 'X', dueDate: 'mañana' }).dueDate).toBeNull()
+    expect(createTask({ title: 'X', dueDate: '2026-9-3' }).dueDate).toBeNull()
+    expect(createTask({ title: 'X', dueDate: '2026-09-03' }).dueDate).toBe('2026-09-03')
+  })
+
+  it('descarta estimaciones de minutos absurdas', () => {
+    expect(createTask({ title: 'X', estimatedMinutes: -30 }).estimatedMinutes).toBeNull()
+    expect(createTask({ title: 'X', estimatedMinutes: 0 }).estimatedMinutes).toBeNull()
+    expect(createTask({ title: 'X', estimatedMinutes: 99999 }).estimatedMinutes).toBeNull()
+    expect(createTask({ title: 'X', estimatedMinutes: 90.4 }).estimatedMinutes).toBe(90)
+  })
 })
 
 describe('rangos de fecha', () => {
