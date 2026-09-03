@@ -22,10 +22,15 @@ function parseArgs(argv) {
 }
 
 // Lector mínimo de .env: el simulador no depende de dotenv.
+// El grupo del valor es NO codicioso (`.*?`) para que `\s*$` recorte de verdad
+// los espacios finales. Con `.*` codicioso, un valor con espacios al final se
+// quedaba con ellos dentro y, si además iba entrecomillado, el recorte de
+// comillas dejaba una comilla suelta pegada al valor — rompiendo el host o el
+// token en silencio, que es el peor modo de fallo posible aquí.
 function loadEnv() {
   if (!existsSync('.env')) return
   for (const line of readFileSync('.env', 'utf8').split('\n')) {
-    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/)
+    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
     if (match) process.env[match[1]] ??= match[2].replace(/^["']|["']$/g, '')
   }
 }
@@ -61,6 +66,25 @@ async function main() {
 
   const speed = Number(args.acelerado || 1)
   const cycles = args.ciclos ? Number(args.ciclos) : Infinity
+
+  // Un argumento no numérico produciría NaN y acabaría escribiendo `ts: null`
+  // en el payload, corrompiendo la marca de tiempo sin que nada lo delate.
+  if (!Number.isFinite(speed) || speed <= 0) {
+    console.error('--acelerado debe ser un número mayor que 0.')
+    process.exit(1)
+  }
+  if (args.ciclos && (!Number.isFinite(cycles) || cycles <= 0)) {
+    console.error('--ciclos debe ser un número entero mayor que 0.')
+    process.exit(1)
+  }
+  // En modo acelerado el historial se sitúa hacia atrás desde ahora, así que
+  // hace falta saber cuántos puntos son. Sin ese límite el reloj simulado
+  // seguiría avanzando más rápido que el real y acabaría publicando en el futuro.
+  if (speed > 1 && !Number.isFinite(cycles)) {
+    console.error('--acelerado requiere --ciclos para saber cuánto historial generar.')
+    process.exit(1)
+  }
+
   const host = process.env.TB_HOST || 'http://200.13.5.20:8080'
   const deviceName = process.env.TB_DEVICE_NAME || 'monitoreo-escritorio'
 
@@ -76,12 +100,19 @@ async function main() {
   console.log('Ctrl+C para detener.')
 
   const presenceOf = makePresence()
-  // Con aceleración, se retrocede el inicio para que el historial generado quede
-  // en el pasado y termine en el momento actual.
-  const wallClockMs = Math.min(cycles, 100000) * PUBLISH_INTERVAL_MS * speed
-  let simulatedTs = Date.now() - (speed > 1 ? wallClockMs : 0)
+  const step = PUBLISH_INTERVAL_MS * speed
+
+  // Marca de tiempo de cada punto. En modo acelerado el historial se construye
+  // hacia atrás DESDE AHORA: cada punto se sitúa a los pasos que le falten para
+  // llegar al final, de modo que el último caiga exactamente en el presente y
+  // ninguno pueda quedar en el futuro. Calcularlo contra Date.now() en cada
+  // iteración lo hace además inmune al tiempo real que tarde el bucle en
+  // completar las peticiones: un reloj simulado acumulado se iba desfasando.
+  const timestampFor = (tick) =>
+    speed > 1 ? Date.now() - (cycles - 1 - tick) * step : Date.now()
 
   for (let tick = 0; tick < cycles; tick++) {
+    const simulatedTs = timestampFor(tick)
     const present = presenceOf(tick)
     const sample = sampleScenario(scenario, tick)
 
@@ -100,7 +131,8 @@ async function main() {
       console.warn(`tick ${tick}: ${err.message}`)
     }
 
-    simulatedTs += PUBLISH_INTERVAL_MS * speed
+    // En tiempo real se espera la cadencia del firmware; en modo acelerado no,
+    // porque el reloj lo marca `timestampFor`, no la espera.
     if (speed === 1) await new Promise((r) => setTimeout(r, PUBLISH_INTERVAL_MS))
   }
 }
