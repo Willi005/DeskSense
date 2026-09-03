@@ -387,7 +387,10 @@ Crear `scripts/simulator.mjs`:
 //
 // Uso:
 //   node scripts/simulator.mjs --escenario=optimo
-//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=2400
+//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=240
+//
+// Cada tick representa 3 s x aceleracion de tiempo simulado. Con --acelerado=120
+// cada tick son 6 min, de modo que 240 ciclos cubren 24 h y 1680 cubren 7 dias.
 import { readFileSync, existsSync } from 'node:fs'
 import { sampleScenario, SCENARIO_NAMES } from './simulator/scenarios.mjs'
 import { resolveDeviceToken, publish } from './simulator/device.mjs'
@@ -569,10 +572,12 @@ Esperado: el dashboard muestra valores en vivo y, a los pocos segundos, se dispa
 - [ ] **Paso 6: Generar historial para los reportes**
 
 ```bash
-npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=2400
+npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=240
 ```
 
-Esperado: publica una jornada completa comprimida. Verificar en la página de Historial, con rango de 24 h, que la curva cubre la ventana completa.
+Cada tick representa `3 s x aceleracion` de tiempo simulado: con `--acelerado=120` cada tick son 6 minutos, así que **240 ciclos cubren exactamente 24 horas**. Para el reporte semanal hacen falta `--ciclos=1680` (7 días).
+
+Esperado: el historial queda poblado y el último punto cae en el momento actual. Verificar en la página de Historial, con rango de 24 h, que la curva cubre la ventana completa sin hueco al final.
 
 - [ ] **Paso 7: Commit**
 
@@ -2524,8 +2529,10 @@ En `src/App.jsx`, importar `Reports` y añadir el render condicional. La página
 - [ ] **Paso 5: Verificar con datos reales**
 
 ```bash
-npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=2400
+npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=1680
 ```
+
+(1680 ciclos a 6 min por tick cubren los 7 días que necesita el reporte semanal.)
 
 Después, en la aplicación: crear tres o cuatro tareas con fecha de hoy, completar algunas, y abrir Reportes.
 
