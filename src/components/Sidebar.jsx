@@ -3,6 +3,7 @@ import Icon from './Icon'
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'history', label: 'Historial', icon: 'history' },
+  { id: 'tasks', label: 'Tareas', icon: 'check-square' },
   { id: 'assistant', label: 'Asistente IA', icon: 'sparkles' },
   { id: 'appearance', label: 'Apariencia', icon: 'palette' },
   { id: 'settings', label: 'Configuración', icon: 'settings' },
