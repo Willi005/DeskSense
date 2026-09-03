@@ -1342,7 +1342,16 @@ function TaskItem({ task, onToggle, onEdit, onRemove }) {
 export default memo(TaskItem)
 ```
 
-> `Icon` es un envoltorio de Lucide React. Verificar en `src/components/Icon.jsx` cómo se mapean los nombres y registrar allí `check` y `trash` si el componente usa un mapa explícito en lugar de pasar el nombre directo.
+> **`Icon` usa un mapa explícito y hay que ampliarlo primero.** `src/components/Icon.jsx` define `const MAP = { ... }` y cae a `Activity` ante un nombre desconocido, **sin avisar**: un icono mal nombrado no da error, solo aparece el icono equivocado. `check` ya existe (mapea a `CheckCircle2`), pero **faltan `trash`, `mic`, `check-square` y `bar-chart`**, que usan esta tarea y las Tareas 7 y 9. Antes de escribir los componentes, añadir a la importación de `lucide-react` y al mapa:
+>
+> ```js
+>   trash: Trash2,
+>   mic: Mic,
+>   'check-square': CheckSquare,
+>   'bar-chart': BarChart3,
+> ```
+>
+> con `Trash2`, `Mic`, `CheckSquare` y `BarChart3` añadidos a la lista de importaciones del principio del archivo.
 
 - [ ] **Paso 2: Crear el compositor de tareas**
 
@@ -2422,7 +2431,7 @@ export default function Reports({ onNavigate }) {
         </button>
         {summary && (
           <div className="glass rounded-2xl px-5 py-4 text-sm text-white/80">
-            <Markdown>{summary}</Markdown>
+            <Markdown text={summary} />
           </div>
         )}
       </div>
@@ -2431,7 +2440,7 @@ export default function Reports({ onNavigate }) {
 }
 ```
 
-> Verificar en `src/components/Markdown.jsx` si recibe el texto como `children` o como una prop; ajustar esa línea al contrato real del componente.
+> `Markdown` recibe el texto por la prop `text` (`Markdown({ text, className })`), no como `children`. Verificado en `src/components/Markdown.jsx:16`.
 
 - [ ] **Paso 3: Añadir el resumen por IA**
 
@@ -2830,26 +2839,27 @@ En `src/main.jsx`, anidar `FocusProvider` como el más interno:
 
 - [ ] **Paso 4: Añadir el interruptor a Configuración**
 
-En `src/pages/Settings.jsx`, junto al interruptor de alertas existente, añadir el de concentración replicando su marcado:
+En `src/pages/Settings.jsx`, junto al interruptor de alertas existente (alrededor de la línea 174), añadir el de concentración.
+
+**Importante:** la página no escribe en los ajustes directamente. Mantiene un estado local `form` (`const [form, setForm] = useState(settings)`, línea 47) y lo vuelca con `update({ ...form, ... })` al enviar (línea 82). El interruptor nuevo debe seguir ese mismo patrón, **no** llamar a `update` por su cuenta:
 
 ```jsx
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-white/90">Ventanas de concentración</p>
-            <p className="mt-1 text-xs leading-relaxed text-white/45">
-              Avisa cuando tu entorno lleve 10 minutos en condiciones óptimas y te sugiere
-              una tarea que exija concentración.
-            </p>
-          </div>
-          <Toggle
-            checked={settings.focusEnabled !== false}
-            onChange={() => update({ focusEnabled: settings.focusEnabled === false })}
-            aria-label="Activar ventanas de concentración"
-          />
-        </div>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-white/90">Ventanas de concentración</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-white/40">
+                    Avisa cuando tu entorno lleve 10 minutos en condiciones óptimas y te
+                    sugiere una tarea que exija concentración.
+                  </p>
+                </div>
+                <Toggle
+                  checked={form.focusEnabled !== false}
+                  onChange={() => setForm((f) => ({ ...f, focusEnabled: f.focusEnabled === false }))}
+                />
+              </div>
 ```
 
-> Ajustar los nombres `update` y las clases al marcado real del interruptor de alertas que ya existe en el archivo, para que ambos queden idénticos.
+Copiar las clases exactas del bloque de alertas contiguo para que ambos queden idénticos.
 
 - [ ] **Paso 5: Verificar el disparo**
 
