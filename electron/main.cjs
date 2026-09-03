@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron')
 const path = require('path')
+const { registerStoreIpc } = require('./store.cjs')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -92,6 +93,7 @@ app.whenReady().then(() => {
   app.setName('DeskSense')
   // Necesario para que las notificaciones nativas se muestren en Windows.
   if (process.platform === 'win32') app.setAppUserModelId('com.monitoreo.escritorio')
+  registerStoreIpc(ipcMain)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
