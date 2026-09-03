@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, useMemo } from 
 import { useTelemetry } from './TelemetryContext'
 import { useSettings } from './SettingsContext'
 import { useTasks } from './TasksContext'
-import { isOptimal, nextFocusState, INITIAL_FOCUS_STATE } from '../lib/focus'
+import { isOptimal, nextFocusState, INITIAL_FOCUS_STATE, FOCUS_HOLD_MS } from '../lib/focus'
 import { nextDeepTask } from '../lib/tasks'
 
 const FocusContext = createContext(null)
@@ -10,6 +10,14 @@ const FocusContext = createContext(null)
 // La condición se evalúa también por reloj, no solo cuando llega telemetría:
 // el umbral es temporal y debe cumplirse aunque los valores no cambien.
 const TICK_MS = 15000
+
+// El texto del aviso se deriva del umbral real. Escribirlo a mano hacía que la
+// notificación afirmara "10 minutos" aunque la constante dijera otra cosa: un
+// mensaje que miente sobre lo que el sistema acaba de medir.
+const holdLabel =
+  FOCUS_HOLD_MS >= 60000
+    ? `${Math.round(FOCUS_HOLD_MS / 60000)} minutos`
+    : `${Math.round(FOCUS_HOLD_MS / 1000)} segundos`
 
 export function FocusProvider({ children }) {
   const { values, presence } = useTelemetry()
@@ -35,8 +43,8 @@ export function FocusProvider({ children }) {
       if (result.notify) {
         const suggestion = nextDeepTask(tasks)
         const body = suggestion
-          ? `Tu entorno lleva 10 minutos en condiciones óptimas. Buen momento para: «${suggestion.title}».`
-          : 'Tu entorno lleva 10 minutos en condiciones óptimas. Buen momento para una tarea que exija concentración.'
+          ? `Tu entorno lleva ${holdLabel} en condiciones óptimas. Buen momento para: «${suggestion.title}».`
+          : `Tu entorno lleva ${holdLabel} en condiciones óptimas. Buen momento para una tarea que exija concentración.`
         try {
           window.electronAPI?.notify?.('Ventana de concentración detectada', body)
         } catch {
