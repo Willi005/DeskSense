@@ -4,7 +4,10 @@
 //
 // Uso:
 //   node scripts/simulator.mjs --escenario=optimo
-//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=2400
+//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=240
+//
+// Cada tick representa 3 s x aceleracion de tiempo simulado. Con --acelerado=120
+// cada tick son 6 min, de modo que 240 ciclos cubren 24 h y 1680 cubren 7 dias.
 import { readFileSync, existsSync } from 'node:fs'
 import { sampleScenario, SCENARIO_NAMES } from './simulator/scenarios.mjs'
 import { resolveDeviceToken, publish } from './simulator/device.mjs'
