@@ -51,25 +51,56 @@ export async function startRecording() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const recorder = new MediaRecorder(stream)
   const chunks = []
+  let finished = false
+
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) chunks.push(event.data)
   }
   recorder.start()
 
+  // Cierra el micrófono pase lo que pase. Mientras haya una pista viva el
+  // sistema muestra el indicador de grabación encendido, así que liberarlas no
+  // es una cortesía: es lo que le dice a la persona que ya no se la escucha.
+  const releaseMicrophone = () => {
+    finished = true
+    stream.getTracks().forEach((track) => track.stop())
+  }
+
   return {
+    // Aborta sin procesar el audio. Lo usa el componente al desmontarse: sin
+    // esto, salir de la página a media grabación dejaba el micrófono abierto
+    // indefinidamente, porque las pistas solo se cerraban dentro de `onstop`.
+    cancel: () => {
+      if (finished) return
+      releaseMicrophone()
+      try {
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {
+        /* ya estaba detenido */
+      }
+    },
     stop: () =>
       new Promise((resolve, reject) => {
+        // Una segunda llamada reasignaba `onstop` y dejaba la primera promesa
+        // colgada para siempre. Se rechaza de forma explícita.
+        if (finished) {
+          reject(new Error('La grabación ya se había detenido.'))
+          return
+        }
         recorder.onstop = async () => {
-          stream.getTracks().forEach((track) => track.stop())
+          releaseMicrophone()
+          let context = null
           try {
             const raw = new Blob(chunks, { type: recorder.mimeType })
-            const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
+            context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
             const decoded = await context.decodeAudioData(await raw.arrayBuffer())
             const wav = encodeWav(decoded.getChannelData(0), decoded.sampleRate)
-            await context.close()
             resolve(await blobToBase64(wav))
           } catch (err) {
             reject(err)
+          } finally {
+            // El contexto se cierra también si la decodificación falla.
+            if (context) await context.close().catch(() => {})
           }
         }
         recorder.stop()
