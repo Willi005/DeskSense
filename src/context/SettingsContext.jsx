@@ -20,6 +20,8 @@ const DEFAULTS = {
   anthropicApiKey: import.meta.env?.VITE_ANTHROPIC_API_KEY || '',
   // Alertas automáticas cuando una métrica llega a nivel alto/crítico.
   alertsEnabled: true,
+  // Ventanas de concentración: avisa cuando se detecta entorno óptimo sostenido.
+  focusEnabled: true,
   // ---- Apariencia ----
   // Tema visual: 'dark' (por defecto) o 'light' (glass blanco).
   theme: 'dark',
