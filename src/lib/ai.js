@@ -179,3 +179,68 @@ export async function chat({ provider, apiKey, model, values, messages, disabled
     messages: augmented,
   })
 }
+
+// ---------------------------------------------------------------------------
+// Interpretación de tareas en lenguaje natural
+// ---------------------------------------------------------------------------
+
+// Prompt propio, deliberadamente separado de SYSTEM_PROMPT: aquel restringe al
+// asistente al ambiente del escritorio y rechazaría esta petición por
+// considerarla fuera de alcance.
+const TASK_PROMPT = `Conviertes una frase en español en una tarea estructurada.
+Respondes ÚNICAMENTE con un objeto JSON, sin texto adicional ni bloques de código.
+
+Campos:
+- "title": el enunciado de la tarea, limpio y en español, sin la información de fecha ni prioridad.
+- "dueDate": fecha objetivo en formato YYYY-MM-DD, resuelta a partir de expresiones como "hoy", "mañana" o "el viernes". Si no se menciona ninguna, usa la fecha de hoy.
+- "priority": "high", "medium" o "low".
+- "complexity": "deep" si la tarea exige concentración sostenida (redactar, programar, estudiar, analizar); "shallow" si es mecánica o breve (responder un correo, ordenar, enviar algo).
+- "estimatedMinutes": número entero de minutos, o null si no se menciona duración.`
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+// Se exporta aparte de parseTask para poder probar el respaldo sin red.
+export function parseTaskResponse(text, today, originalInput) {
+  const fallback = {
+    title: String(originalInput || '').trim(),
+    dueDate: today,
+    priority: 'medium',
+    complexity: 'shallow',
+    estimatedMinutes: null,
+  }
+
+  try {
+    // Los modelos suelen envolver el JSON en un bloque de código pese a la
+    // instrucción; se extrae el primer objeto que aparezca.
+    const match = String(text || '').match(/\{[\s\S]*\}/)
+    if (!match) return fallback
+
+    const parsed = JSON.parse(match[0])
+    const title = String(parsed.title || '').trim()
+    if (!title) return fallback
+
+    return {
+      title,
+      dueDate: DATE_PATTERN.test(parsed.dueDate) ? parsed.dueDate : today,
+      priority: parsed.priority,
+      complexity: parsed.complexity,
+      estimatedMinutes: Number.isFinite(parsed.estimatedMinutes) ? parsed.estimatedMinutes : null,
+    }
+  } catch {
+    // Nunca se pierde lo que escribió la persona.
+    return fallback
+  }
+}
+
+// Interpreta una frase escrita. Devuelve campos listos para createTask.
+export async function parseTask({ provider, apiKey, model, input, today }) {
+  const text = await callModel({
+    provider,
+    apiKey,
+    model,
+    system: TASK_PROMPT,
+    messages: [{ role: 'user', content: `Hoy es ${today}. Frase: "${input}"` }],
+    maxTokens: 300,
+  })
+  return parseTaskResponse(text, today, input)
+}
