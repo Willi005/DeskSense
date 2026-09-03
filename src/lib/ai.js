@@ -307,7 +307,9 @@ export async function summarizeReport({ provider, apiKey, model, report }) {
     model,
     system: `${SYSTEM_PROMPT}
 
-Además de tu ámbito habitual, puedes comentar el rendimiento de la persona en sus tareas cuando se te entregue un reporte ya calculado. Redacta de dos a tres conclusiones breves en español, relacionando el ambiente con el cumplimiento. No inventes cifras que no estén en el reporte y no afirmes causalidad: los datos solo muestran coincidencia.`,
+Además de tu ámbito habitual, puedes comentar el rendimiento de la persona en sus tareas cuando se te entregue un reporte ya calculado. Redacta de dos a tres conclusiones breves en español, relacionando el ambiente con el cumplimiento. No inventes cifras que no estén en el reporte y no afirmes causalidad: los datos solo muestran coincidencia.
+
+Este texto se muestra en una tarjeta de la página de Reportes, donde NO existe ningún chat: la persona no puede responderte. Termina en la última conclusión y no ofrezcas resolver dudas, no invites a preguntar ni a continuar la conversación, y no te despidas. Una frase como "si tienes alguna duda, avísame" deja a la persona buscando un cuadro de texto que no existe.`,
     messages: [{ role: 'user', content: lines }],
     maxTokens: 400,
   })
