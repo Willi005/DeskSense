@@ -1933,25 +1933,56 @@ export async function startRecording() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const recorder = new MediaRecorder(stream)
   const chunks = []
+  let finished = false
+
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) chunks.push(event.data)
   }
   recorder.start()
 
+  // Cierra el micrófono pase lo que pase. Mientras haya una pista viva el
+  // sistema muestra el indicador de grabación encendido, así que liberarlas no
+  // es una cortesía: es lo que le dice a la persona que ya no se la escucha.
+  const releaseMicrophone = () => {
+    finished = true
+    stream.getTracks().forEach((track) => track.stop())
+  }
+
   return {
+    // Aborta sin procesar el audio. Lo usa el componente al desmontarse: sin
+    // esto, salir de la página a media grabación dejaba el micrófono abierto
+    // indefinidamente, porque las pistas solo se cerraban dentro de `onstop`.
+    cancel: () => {
+      if (finished) return
+      releaseMicrophone()
+      try {
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {
+        /* ya estaba detenido */
+      }
+    },
     stop: () =>
       new Promise((resolve, reject) => {
+        // Una segunda llamada reasignaba `onstop` y dejaba la primera promesa
+        // colgada para siempre. Se rechaza de forma explícita.
+        if (finished) {
+          reject(new Error('La grabación ya se había detenido.'))
+          return
+        }
         recorder.onstop = async () => {
-          stream.getTracks().forEach((track) => track.stop())
+          releaseMicrophone()
+          let context = null
           try {
             const raw = new Blob(chunks, { type: recorder.mimeType })
-            const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
+            context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
             const decoded = await context.decodeAudioData(await raw.arrayBuffer())
             const wav = encodeWav(decoded.getChannelData(0), decoded.sampleRate)
-            await context.close()
             resolve(await blobToBase64(wav))
           } catch (err) {
             reject(err)
+          } finally {
+            // El contexto se cierra también si la decodificación falla.
+            if (context) await context.close().catch(() => {})
           }
         }
         recorder.stop()
@@ -2028,7 +2059,7 @@ En `src/components/TaskComposer.jsx`, añadir las importaciones de `useRef`, `st
     try {
       const wavBase64 = await recorderRef.current.stop()
       const active = resolveModel(settings)
-      if (!active.apiKey) throw new Error('sin clave')
+      if (!active.apiKey) throw new Error('sin-clave')
       const fields = await parseTaskFromAudio({
         provider: active.provider,
         apiKey: active.apiKey,
@@ -2036,16 +2067,46 @@ En `src/components/TaskComposer.jsx`, añadir las importaciones de `useRef`, `st
         wavBase64,
         today: toDateKey(),
       })
-      if (!fields.title) throw new Error('sin transcripción')
+      if (!fields.title) throw new Error('sin-transcripcion')
       onCreate({ ...fields, source: 'voice' })
-    } catch {
-      // Nada se pierde: la persona puede escribir la tarea a continuación.
-      setVoiceError('No se pudo interpretar el audio. Escribe la tarea.')
+    } catch (err) {
+      // Nada se pierde: la persona puede escribir la tarea a continuación. Pero
+      // el motivo importa: decir "no se entendió el audio" cuando el problema es
+      // la cuenta manda a buscar el fallo donde no está.
+      setVoiceError(describeVoiceError(err))
     } finally {
       recorderRef.current = null
       setBusy(false)
     }
   }
+```
+
+Y, fuera del componente, la función que traduce el fallo a una causa accionable:
+
+```jsx
+// Distingue las causas de fallo de la voz. Cada una se arregla en un sitio
+// distinto, así que colapsarlas en un único mensaje deja a la persona sin saber
+// dónde mirar. El caso del saldo es real y frecuente: los modelos cobran el
+// audio aparte y exigen un mínimo de crédito.
+function describeVoiceError(err) {
+  const detalle = String(err?.message || '')
+  if (detalle.includes('sin-clave')) {
+    return 'Falta la API key del modelo. Configúrala en Configuración.'
+  }
+  if (detalle.includes('requiere un modelo de OpenRouter')) {
+    return 'La voz necesita un modelo de OpenRouter. Cámbialo en el selector.'
+  }
+  if (detalle.includes('402')) {
+    return 'Tu cuenta de OpenRouter no tiene saldo suficiente para audio.'
+  }
+  if (detalle.includes('401') || detalle.includes('403')) {
+    return 'La API key fue rechazada. Revísala en Configuración.'
+  }
+  if (detalle.includes('sin-transcripcion')) {
+    return 'No se entendió el dictado. Inténtalo de nuevo o escribe la tarea.'
+  }
+  return 'No se pudo procesar el audio. Escribe la tarea.'
+}
 ```
 
 Y el botón, antes del botón de envío dentro del formulario:
@@ -2069,6 +2130,14 @@ El estado de grabación se comunica con el `aria-label` además del color, para 
 ```jsx
       {voiceError && <p className="px-1 pt-1 text-xs text-status-bad">{voiceError}</p>}
 ```
+
+Y una limpieza al desmontar, para que salir de la página a media grabación no deje el micrófono abierto:
+
+```jsx
+  useEffect(() => () => recorderRef.current?.cancel?.(), [])
+```
+
+Requiere añadir `useEffect` a la importación de React del componente.
 
 - [ ] **Paso 6: Verificar de extremo a extremo**
 
