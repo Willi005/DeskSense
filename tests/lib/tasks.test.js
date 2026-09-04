@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createTask,
+  sanitizeTaskFields,
   dayRange,
   weekRange,
   toDateKey,
@@ -134,5 +135,32 @@ describe('nextDeepTask', () => {
       createTask({ title: 'Cercana', priority: 'high', complexity: 'deep', dueDate: '2026-09-03' }),
     ]
     expect(nextDeepTask(tasks).title).toBe('Cercana')
+  })
+})
+
+describe('sanitizeTaskFields', () => {
+  it('aplica las mismas reglas que createTask a una edición', () => {
+    const limpio = sanitizeTaskFields({
+      title: '  Revisar informe  ',
+      dueDate: 'mañana',
+      priority: 'urgentísima',
+      complexity: 'media',
+      estimatedMinutes: -5,
+    })
+    expect(limpio.title).toBe('Revisar informe')
+    expect(limpio.dueDate).toBeNull()
+    expect(limpio.priority).toBe('medium')
+    expect(limpio.complexity).toBe('shallow')
+    expect(limpio.estimatedMinutes).toBeNull()
+  })
+
+  it('no inventa campos que la edición no tocó', () => {
+    const limpio = sanitizeTaskFields({ title: 'Solo el título' })
+    expect(Object.keys(limpio)).toEqual(['title'])
+  })
+
+  it('nunca deja que una edición altere el estado ni la procedencia', () => {
+    const limpio = sanitizeTaskFields({ title: 'X', status: 'done', source: 'form', id: 'otro' })
+    expect(limpio).toEqual({ title: 'X' })
   })
 })

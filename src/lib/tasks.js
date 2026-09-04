@@ -27,6 +27,32 @@ function isValidMinutes(value) {
   return Number.isFinite(value) && value > 0 && value <= MAX_ESTIMATED_MINUTES
 }
 
+// Limpia los campos de una EDICIÓN con las mismas reglas que `createTask`.
+//
+// `createTask` era la única puerta con validación, y editar no pasaba por ella:
+// una tarea podía acabar con 0 minutos estimados, con una fecha ilegible que la
+// hacía desaparecer de todos los períodos, o perdiendo su procedencia. Solo se
+// tocan las claves presentes, para no reponer campos que la edición no cambió, y
+// se ignoran las que una edición no debe alterar (`id`, `status`, `completedAt`,
+// `createdAt`, `source`).
+const EDITABLE = ['title', 'dueDate', 'priority', 'complexity', 'estimatedMinutes']
+
+export function sanitizeTaskFields(fields = {}) {
+  const limpio = {}
+  for (const clave of EDITABLE) {
+    if (!(clave in fields)) continue
+    const valor = fields[clave]
+    if (clave === 'title') limpio.title = String(valor || '').trim()
+    else if (clave === 'dueDate') limpio.dueDate = DATE_KEY_PATTERN.test(valor) ? valor : null
+    else if (clave === 'priority') limpio.priority = oneOf(valor, VALID_PRIORITIES, 'medium')
+    else if (clave === 'complexity') limpio.complexity = oneOf(valor, VALID_COMPLEXITIES, 'shallow')
+    else if (clave === 'estimatedMinutes') {
+      limpio.estimatedMinutes = isValidMinutes(valor) ? Math.round(valor) : null
+    }
+  }
+  return limpio
+}
+
 export function createTask({
   title,
   dueDate = null,
