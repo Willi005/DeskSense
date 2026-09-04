@@ -18,7 +18,7 @@ const PERIODS = [
 ]
 
 export default function Reports({ onNavigate }) {
-  const { settings, isConfigured } = useSettings()
+  const { settings, isConfigured, ensureFreshToken } = useSettings()
   const { tasks, focusWindows } = useTasks()
   const [period, setPeriod] = useState('today')
   const [series, setSeries] = useState({})
@@ -45,7 +45,7 @@ export default function Reports({ onNavigate }) {
         const interval = Math.max(1000, Math.round((range.end - range.start) / 600))
         const data = await getTimeseries(
           settings.tbHost,
-          settings.jwt,
+          await ensureFreshToken(),
           settings.deviceId,
           WATCH_KEYS,
           range.start,
