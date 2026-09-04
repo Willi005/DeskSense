@@ -73,8 +73,19 @@ export function averageSeries(series, disabled = []) {
   return out
 }
 
+// Cuánto puede alejarse una medición del instante que se quiere describir. Media
+// hora cubre con holgura los cubos de un rango diario o semanal sin llegar a
+// describir otro momento del día.
+export const MAX_LEVEL_DISTANCE_MS = 30 * 60 * 1000
+
 // Nivel del entorno en un instante dado, tomando de cada serie el punto más
 // cercano en el tiempo. Es lo que permite situar una tarea completada.
+//
+// El punto más cercano solo vale si además está CERCA. `buildReport` selecciona
+// las tareas por su fecha de vencimiento pero las sitúa por cuándo se
+// completaron, así que una tarea que vence hoy y se terminó la semana pasada
+// caía sobre la medición de hoy y recibía un entorno que no vivió. Sin límite,
+// la frase del patrón afirmaba con aplomo algo que nadie midió.
 export function levelAt(series, ts, disabled = []) {
   const values = {}
   for (const key of activeKeys(disabled)) {
@@ -84,6 +95,7 @@ export function levelAt(series, ts, disabled = []) {
     for (const point of points) {
       if (Math.abs(point.ts - ts) < Math.abs(closest.ts - ts)) closest = point
     }
+    if (Math.abs(closest.ts - ts) > MAX_LEVEL_DISTANCE_MS) continue
     values[key] = Number(closest.value)
   }
   const index = environmentIndex(values, disabled)

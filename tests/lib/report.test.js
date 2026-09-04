@@ -120,6 +120,20 @@ describe('environmentIndexOverTime', () => {
   })
 })
 
+describe('levelAt con distancia temporal', () => {
+  const series = { ruido: [{ ts: 50_000_000, value: '40' }] }
+
+  it('no atribuye el entorno de un momento lejano', () => {
+    // Una tarea que vence hoy pero se completó la semana pasada recibía el
+    // entorno de hoy: el punto "más cercano" estaba a horas de distancia.
+    expect(levelAt(series, 1000)).toBe('unknown')
+  })
+
+  it('sí usa un punto cercano', () => {
+    expect(levelAt(series, 50_000_000 + 60_000)).toBe('good')
+  })
+})
+
 describe('buildReport', () => {
   const range = { start: 0, end: 10000 }
 
