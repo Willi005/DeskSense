@@ -17,7 +17,7 @@ const MAX_POINTS = 60 // rolling window for live mini-charts
 const TelemetryContext = createContext(null)
 
 export function TelemetryProvider({ children }) {
-  const { settings, isConfigured } = useSettings()
+  const { settings, isConfigured, ensureFreshToken } = useSettings()
   const [latest, setLatest] = useState({}) // { key: { ts, value } }
   const [history, setHistory] = useState(() =>
     Object.fromEntries(TELEMETRY_KEYS.map((k) => [k, []]))
@@ -103,7 +103,8 @@ export function TelemetryProvider({ children }) {
     let cancelled = false
 
     // Seed current values from REST so the UI is populated immediately.
-    getLatest(tbHost, jwt, deviceId, TELEMETRY_KEYS)
+    ensureFreshToken()
+      .then((token) => getLatest(tbHost, token, deviceId, TELEMETRY_KEYS))
       .then((seed) => {
         if (!cancelled && seed && Object.keys(seed).length) ingest(seed)
       })
@@ -112,6 +113,10 @@ export function TelemetryProvider({ children }) {
     const ws = new TbWebSocket({
       host: tbHost,
       jwt,
+      // Cada (re)conexión pide un token vigente. Es lo que evita que una
+      // expiración deje el WebSocket reintentando para siempre con un token
+      // muerto, sin datos y sin explicación visible.
+      getJwt: ensureFreshToken,
       deviceId,
       onData: (parsed) => !cancelled && ingest(parsed),
       onStatus: (s) => !cancelled && setStatus(s),
@@ -124,7 +129,7 @@ export function TelemetryProvider({ children }) {
       ws.close()
       wsRef.current = null
     }
-  }, [isConfigured, tbHost, jwt, deviceId, ingest])
+  }, [isConfigured, tbHost, jwt, deviceId, ingest, ensureFreshToken])
 
   // Derived values recomputed only when `latest` changes (once per frame).
   const { values, presence, lastUpdate } = useMemo(() => {
