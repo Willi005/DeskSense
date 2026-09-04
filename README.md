@@ -41,8 +41,9 @@ La versión empaquetada está disponible en las
   formulario manual. Se guardan en `~/.config/desksense/desksense-data.json` vía
   puente IPC.
 - **Reportes de rendimiento**: períodos Hoy y Esta semana (lunes a domingo) con
-  porcentaje de cumplimiento de tareas, Índice de Entorno (0–100, promedio ponderado
-  de los niveles de cada sensor) y el "patrón observado" que agrupa las tareas
+  porcentaje de cumplimiento de tareas, Índice de Entorno (0–100, que
+  clasifica el entorno en cada instante del período y promedia esos puntajes, de modo
+  que una jornada inestable no se disfrace de perfecta) y el "patrón observado" que agrupa las tareas
   completadas según la calidad del entorno del momento.
 - **Ventanas de concentración**: máquina de estados que avisa cuando el entorno lleva
   10 minutos continuos en nivel óptimo con presencia, sugiriendo la tarea profunda
