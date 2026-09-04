@@ -25,6 +25,41 @@ export function environmentIndex(values, disabled = []) {
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
 }
 
+// Índice a lo largo de un período: clasifica CADA instante y promedia esos
+// puntajes.
+//
+// La alternativa —promediar los valores y clasificar el resultado— esconde la
+// varianza, que es justo lo que un índice de calidad debe reflejar. Medido con
+// datos reales de una jornada: la luz osciló entre 0 % (oscuridad) y 98,9 %
+// (deslumbramiento) y la humedad rozó el umbral crítico, pero el promedio de
+// cada sensor caía en su rango bueno y el índice daba 100 sobre 100. Este cálculo
+// responde a "qué parte del tiempo el entorno acompañó", no a "cómo fue el valor
+// típico", que es la pregunta útil para un reporte de rendimiento.
+export function environmentIndexOverTime(series, disabled = []) {
+  const keys = activeKeys(disabled).filter((key) => series?.[key]?.length)
+  if (!keys.length) return null
+
+  // Se agrupan los puntos por marca de tiempo. Con la agregación del servidor
+  // todas las series comparten los mismos cubos, pero agrupar por `ts` no asume
+  // que así sea: si una serie llega desalineada, cada instante se evalúa con lo
+  // que haya en él en vez de emparejar valores de momentos distintos.
+  const porInstante = new Map()
+  for (const key of keys) {
+    for (const punto of series[key]) {
+      if (!porInstante.has(punto.ts)) porInstante.set(punto.ts, {})
+      porInstante.get(punto.ts)[key] = Number(punto.value)
+    }
+  }
+
+  const puntajes = []
+  for (const valores of porInstante.values()) {
+    const indice = environmentIndex(valores, disabled)
+    if (indice != null) puntajes.push(indice)
+  }
+  if (!puntajes.length) return null
+  return Math.round(puntajes.reduce((a, b) => a + b, 0) / puntajes.length)
+}
+
 // getTimeseries entrega { key: [{ ts, value }] } con value como cadena.
 export function averageSeries(series, disabled = []) {
   const out = {}
@@ -101,7 +136,10 @@ export function buildReport({ tasks, series, focusWindows = [], range, disabled 
     range,
     completion: completionRate(tasks),
     environment: {
-      index: environmentIndex(average, disabled),
+      // El índice recorre el período instante a instante; los promedios se
+      // conservan aparte porque siguen siendo útiles para leer el detalle por
+      // sensor, pero ya no son la base del puntaje.
+      index: environmentIndexOverTime(series, disabled),
       average,
     },
     pattern: buildPattern(completed, series, disabled),

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { environmentIndex, averageSeries, levelAt, buildReport } from '../../src/lib/report.js'
+import {
+  environmentIndex,
+  environmentIndexOverTime,
+  averageSeries,
+  levelAt,
+  buildReport,
+} from '../../src/lib/report.js'
 
 // getTimeseries devuelve los valores como cadena de texto: se replica aquí.
 const series = {
@@ -54,6 +60,63 @@ describe('levelAt', () => {
 
   it('devuelve unknown si no hay serie', () => {
     expect(levelAt({}, 1000)).toBe('unknown')
+  })
+})
+
+describe('environmentIndexOverTime', () => {
+  it('penaliza la varianza en vez de esconderla en el promedio', () => {
+    // Media jornada a oscuras y media deslumbrando: el promedio de los valores
+    // da 50 (Óptimo) y ocultaría que el entorno nunca estuvo bien.
+    const series = {
+      luz: [
+        { ts: 1000, value: '0' },
+        { ts: 2000, value: '0' },
+        { ts: 3000, value: '100' },
+        { ts: 4000, value: '100' },
+      ],
+    }
+    expect(environmentIndex(averageSeries(series))).toBe(100)
+    expect(environmentIndexOverTime(series)).toBe(33)
+  })
+
+  it('un entorno realmente bueno sigue puntuando cien', () => {
+    const series = {
+      temperatura: [
+        { ts: 1000, value: '22' },
+        { ts: 2000, value: '23' },
+      ],
+      ruido: [
+        { ts: 1000, value: '40' },
+        { ts: 2000, value: '45' },
+      ],
+    }
+    expect(environmentIndexOverTime(series)).toBe(100)
+  })
+
+  it('promedia los momentos, no los valores', () => {
+    // Un instante bueno (100) y otro malo (33) dan 67, no la clasificación del
+    // valor medio.
+    const series = {
+      ruido: [
+        { ts: 1000, value: '40' },
+        { ts: 2000, value: '75' },
+      ],
+    }
+    expect(environmentIndexOverTime(series)).toBe(67)
+  })
+
+  it('ignora los sensores deshabilitados', () => {
+    const series = {
+      ruido: [{ ts: 1000, value: '75' }],
+      temperatura: [{ ts: 1000, value: '22' }],
+    }
+    expect(environmentIndexOverTime(series, ['ruido'])).toBe(100)
+  })
+
+  it('devuelve null sin datos, para no confundirse con cero', () => {
+    expect(environmentIndexOverTime({})).toBeNull()
+    expect(environmentIndexOverTime({ ruido: [] })).toBeNull()
+    expect(environmentIndexOverTime({ ruido: [{ ts: 1, value: '40' }] }, ['ruido'])).toBeNull()
   })
 })
 
