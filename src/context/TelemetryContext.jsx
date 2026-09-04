@@ -28,6 +28,11 @@ export function TelemetryProvider({ children }) {
   // Coalesce incoming WS frames into a single state update per animation frame
   // so bursts of telemetry don't trigger a render storm.
   const bufferRef = useRef({}) // { key: [{ ts, value }] }
+  // Momento en que llegó el último dato, según el reloj LOCAL. `lastUpdate` usa
+  // el `ts` del dispositivo (su NTP, o el del servidor de ThingsBoard), así que
+  // no sirve para medir antigüedad: comparar ese sello contra Date.now() mezcla
+  // dos relojes y un desfase entre ellos falsea la vigencia de los datos.
+  const [lastArrival, setLastArrival] = useState(0)
   const rafRef = useRef(null)
   const timeoutRef = useRef(null)
 
@@ -67,6 +72,7 @@ export function TelemetryProvider({ children }) {
 
   const ingest = useCallback(
     (parsed) => {
+      setLastArrival(Date.now())
       const buffer = bufferRef.current
       for (const [key, point] of Object.entries(parsed)) {
         ;(buffer[key] ||= []).push(point)
@@ -129,7 +135,11 @@ export function TelemetryProvider({ children }) {
       ws.close()
       wsRef.current = null
     }
-  }, [isConfigured, tbHost, jwt, deviceId, ingest, ensureFreshToken])
+    // `jwt` NO está en las dependencias a propósito: el socket pide su propio
+    // token vigente en cada conexión vía `getJwt`. Incluirlo derribaba y
+    // reabría la conexión en cada renovación, y realimentaba el ciclo
+    // renovar → guardar → reconectar → renovar.
+  }, [isConfigured, tbHost, deviceId, ingest, ensureFreshToken])
 
   // Derived values recomputed only when `latest` changes (once per frame).
   const { values, presence, lastUpdate } = useMemo(() => {
@@ -149,8 +159,8 @@ export function TelemetryProvider({ children }) {
   }, [latest])
 
   const ctxValue = useMemo(
-    () => ({ latest, values, history, status, presence, lastUpdate, isConfigured }),
-    [latest, values, history, status, presence, lastUpdate, isConfigured]
+    () => ({ latest, values, history, status, presence, lastUpdate, lastArrival, isConfigured }),
+    [latest, values, history, status, presence, lastUpdate, lastArrival, isConfigured]
   )
 
   return <TelemetryContext.Provider value={ctxValue}>{children}</TelemetryContext.Provider>

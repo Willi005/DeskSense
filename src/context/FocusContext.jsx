@@ -26,7 +26,7 @@ const holdLabel =
     : `${Math.round(FOCUS_HOLD_MS / 1000)} segundos`
 
 export function FocusProvider({ children }) {
-  const { values, presence, lastUpdate } = useTelemetry()
+  const { values, presence, lastArrival } = useTelemetry()
   const { settings } = useSettings()
   const { tasks, addFocusWindow } = useTasks()
   const [phase, setPhase] = useState('idle')
@@ -34,18 +34,18 @@ export function FocusProvider({ children }) {
   const stateRef = useRef(INITIAL_FOCUS_STATE)
   // Se leen por referencia para que el intervalo no se reinicie en cada render.
   const latest = useRef({ values, presence, tasks, settings })
-  latest.current = { values, presence, tasks, settings, lastUpdate }
+  latest.current = { values, presence, tasks, settings, lastArrival }
 
   useEffect(() => {
     function evaluate() {
-      const { values, presence, tasks, settings, lastUpdate } = latest.current
+      const { values, presence, tasks, settings, lastArrival } = latest.current
       if (settings.focusEnabled === false) return
 
       // Sin telemetría vigente no se afirma nada sobre el entorno: los valores en
       // memoria son los últimos recibidos y sobreviven a que el dispositivo deje
       // de publicar.
       const optimal =
-        isTelemetryFresh(lastUpdate) && isOptimal(values, presence, settings.disabledSensors || [])
+        isTelemetryFresh(lastArrival) && isOptimal(values, presence, settings.disabledSensors || [])
       const result = nextFocusState(stateRef.current, { now: Date.now(), optimal })
       stateRef.current = result.state
       setPhase(result.state.phase)

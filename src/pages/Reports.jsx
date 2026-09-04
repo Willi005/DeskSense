@@ -64,7 +64,9 @@ export default function Reports({ onNavigate }) {
     return () => {
       cancelled = true
     }
-  }, [isConfigured, range, settings])
+    // Se depende de los campos concretos, no del objeto `settings` entero: así
+    // cambiar el tema o guardar un token nuevo no recarga toda la telemetría.
+  }, [isConfigured, range, settings.tbHost, settings.deviceId, ensureFreshToken])
 
   // El resumen deja de corresponder al cambiar de período.
   useEffect(() => setSummary(''), [period])
