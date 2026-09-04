@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback } from 'react'
-import { login as tbLogin, getDeviceByName } from '../lib/thingsboard'
+import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { login as tbLogin, getDeviceByName, refreshSession } from '../lib/thingsboard'
+import { needsRefresh } from '../lib/auth'
 
 const STORAGE_KEY = 'monitoreo-settings'
 
@@ -8,6 +9,9 @@ const DEFAULTS = {
   tbUsername: '',
   tbPassword: '',
   jwt: '',
+  // Permite renovar la sesión sin volver a pedir credenciales. Dura 7 días,
+  // frente a los 150 minutos del JWT.
+  refreshToken: '',
   deviceName: '',
   deviceId: '',
   deviceAccessToken: '',
@@ -45,6 +49,12 @@ const SettingsContext = createContext(null)
 export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(load)
 
+  // Espejo del estado para que `ensureFreshToken` lea siempre los valores
+  // actuales: es un callback estable que, si cerrara sobre `settings`, renovaría
+  // usando el token de un render viejo.
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+
   const persist = useCallback((next) => {
     setSettings((prev) => {
       const merged = { ...prev, ...next }
@@ -59,9 +69,17 @@ export function SettingsProvider({ children }) {
 
   // Authenticate with ThingsBoard, store JWT and resolve the device UUID.
   const connect = useCallback(async ({ tbHost, tbUsername, tbPassword, deviceName }) => {
-    const { token } = await tbLogin(tbHost, tbUsername, tbPassword)
+    const { token, refreshToken } = await tbLogin(tbHost, tbUsername, tbPassword)
     // Persist the JWT immediately so it is kept even if device lookup fails.
-    persist({ tbHost, tbUsername, tbPassword, deviceName, jwt: token, deviceId: '' })
+    persist({
+      tbHost,
+      tbUsername,
+      tbPassword,
+      deviceName,
+      jwt: token,
+      refreshToken: refreshToken || '',
+      deviceId: '',
+    })
     // Resolve the device; capture (not throw) the reason so the UI can show the
     // JWT and explain the device problem at the same time.
     try {
@@ -73,10 +91,57 @@ export function SettingsProvider({ children }) {
     }
   }, [persist])
 
+  // Renovación de la sesión en un único lugar. Devuelve siempre un JWT utilizable
+  // o lanza si ya no hay forma de conseguirlo.
+  //
+  // Tres niveles, del más barato al más caro:
+  //   1. El token vigente, si le queda vida.
+  //   2. Renovación con el refresh token (una petición, sin credenciales).
+  //   3. Login completo con el usuario y la contraseña guardados.
+  //
+  // Sin esto, el JWT moría a las 2,5 horas y la aplicación se quedaba mostrando
+  // "Sin datos" hasta que alguien volvía a conectar a mano desde Configuración.
+  const refreshing = useRef(null)
+
+  const ensureFreshToken = useCallback(async () => {
+    const actual = settingsRef.current
+    if (!needsRefresh(actual.jwt)) return actual.jwt
+
+    // Varias llamadas simultáneas (WebSocket + Reportes + Historial) deben
+    // compartir una única renovación, no disparar una cada una.
+    if (refreshing.current) return refreshing.current
+
+    refreshing.current = (async () => {
+      try {
+        if (actual.refreshToken) {
+          try {
+            const datos = await refreshSession(actual.tbHost, actual.refreshToken)
+            persist({ jwt: datos.token, refreshToken: datos.refreshToken || '' })
+            return datos.token
+          } catch {
+            // El refresh token también caducó: se sigue al login completo.
+          }
+        }
+
+        if (actual.tbUsername && actual.tbPassword) {
+          const datos = await tbLogin(actual.tbHost, actual.tbUsername, actual.tbPassword)
+          persist({ jwt: datos.token, refreshToken: datos.refreshToken || '' })
+          return datos.token
+        }
+
+        throw new Error('La sesión expiró. Vuelve a conectar desde Configuración.')
+      } finally {
+        refreshing.current = null
+      }
+    })()
+
+    return refreshing.current
+  }, [persist])
+
   const isConfigured = Boolean(settings.jwt && settings.deviceId)
 
   return (
-    <SettingsContext.Provider value={{ settings, update: persist, connect, isConfigured }}>
+    <SettingsContext.Provider value={{ settings, update: persist, connect, ensureFreshToken, isConfigured }}>
       {children}
     </SettingsContext.Provider>
   )
