@@ -5,9 +5,13 @@ import { wsUrl } from './thingsboard'
 //   onData({ temperatura: { ts, value }, ... })
 //   onStatus('connecting' | 'open' | 'closed' | 'error')
 export class TbWebSocket {
-  constructor({ host, jwt, deviceId, onData, onStatus }) {
+  // `getJwt` permite pedir un token fresco en CADA conexión. Sin él, una
+  // reconexión tras la expiración del JWT reintentaba indefinidamente con el
+  // token muerto: el cliente parecía estar reconectando pero nunca lo lograba.
+  constructor({ host, jwt, getJwt, deviceId, onData, onStatus }) {
     this.host = host
     this.jwt = jwt
+    this.getJwt = getJwt || null
     this.deviceId = deviceId
     this.onData = onData || (() => {})
     this.onStatus = onStatus || (() => {})
@@ -18,9 +22,21 @@ export class TbWebSocket {
     this.reconnectDelay = 2000
   }
 
-  connect() {
+  async connect() {
     this.closedByUser = false
     this.onStatus('connecting')
+
+    if (this.getJwt) {
+      try {
+        this.jwt = await this.getJwt()
+      } catch {
+        // Si no se pudo renovar, se intenta con el token que haya: puede que
+        // siga siendo válido y el fallo fuera de red.
+      }
+      // Un cierre pedido mientras se renovaba no debe acabar abriendo el socket.
+      if (this.closedByUser) return
+    }
+
     const url = `${wsUrl(this.host)}?token=${encodeURIComponent(this.jwt)}`
     try {
       this.ws = new WebSocket(url)

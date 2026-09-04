@@ -13,3 +13,10 @@ build/icon.png
 
 # Espacio de trabajo temporal de ejecución de planes (registro, informes, diffs)
 .superpowers
+
+# Credenciales reales del firmware (WiFi y token del dispositivo).
+# La plantilla versionada es esp32/secrets.example.h.
+esp32/secrets.h
+
+# Cache de compilacion y toolchain de PlatformIO (cientos de MB).
+esp32/.pio/

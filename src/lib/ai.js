@@ -179,3 +179,138 @@ export async function chat({ provider, apiKey, model, values, messages, disabled
     messages: augmented,
   })
 }
+
+// ---------------------------------------------------------------------------
+// Interpretación de tareas en lenguaje natural
+// ---------------------------------------------------------------------------
+
+// Prompt propio, deliberadamente separado de SYSTEM_PROMPT: aquel restringe al
+// asistente al ambiente del escritorio y rechazaría esta petición por
+// considerarla fuera de alcance.
+const TASK_PROMPT = `Conviertes una frase en español en una tarea estructurada.
+Respondes ÚNICAMENTE con un objeto JSON, sin texto adicional ni bloques de código.
+
+Campos:
+- "title": el enunciado de la tarea, limpio y en español, sin la información de fecha ni prioridad.
+- "dueDate": fecha objetivo en formato YYYY-MM-DD, resuelta a partir de expresiones como "hoy", "mañana" o "el viernes". Si no se menciona ninguna, usa la fecha de hoy.
+- "priority": "high", "medium" o "low".
+- "complexity": "deep" si la tarea exige concentración sostenida (redactar, programar, estudiar, analizar); "shallow" si es mecánica o breve (responder un correo, ordenar, enviar algo).
+- "estimatedMinutes": número entero de minutos, o null si no se menciona duración.`
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+// Se exporta aparte de parseTask para poder probar el respaldo sin red.
+export function parseTaskResponse(text, today, originalInput) {
+  const fallback = {
+    title: String(originalInput || '').trim(),
+    dueDate: today,
+    priority: 'medium',
+    complexity: 'shallow',
+    estimatedMinutes: null,
+  }
+
+  try {
+    // Los modelos suelen envolver el JSON en un bloque de código pese a la
+    // instrucción; se extrae el primer objeto que aparezca.
+    const match = String(text || '').match(/\{[\s\S]*\}/)
+    if (!match) return fallback
+
+    const parsed = JSON.parse(match[0])
+    // El título tiene que ser texto de verdad. Con `String(parsed.title)`, un
+    // objeto se convertiría en "[object Object]" y un array en "a,b": basura que
+    // acabaría mostrándose en pantalla en lugar de caer al respaldo y conservar
+    // lo que la persona escribió, que es la garantía central de esta función.
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : ''
+    if (!title) return fallback
+
+    return {
+      title,
+      dueDate: DATE_PATTERN.test(parsed.dueDate) ? parsed.dueDate : today,
+      // `priority` y `complexity` se pasan tal cual a propósito: `createTask`
+      // los valida contra su lista blanca y cae a los valores por defecto ante
+      // cualquier cosa inesperada. Validar aquí también sería duplicar esa regla
+      // en dos sitios que tendrían que mantenerse sincronizados.
+      priority: parsed.priority,
+      complexity: parsed.complexity,
+      estimatedMinutes: Number.isFinite(parsed.estimatedMinutes) ? parsed.estimatedMinutes : null,
+    }
+  } catch {
+    // Nunca se pierde lo que escribió la persona.
+    return fallback
+  }
+}
+
+// Interpreta una frase escrita. Devuelve campos listos para createTask.
+export async function parseTask({ provider, apiKey, model, input, today }) {
+  const text = await callModel({
+    provider,
+    apiKey,
+    model,
+    system: TASK_PROMPT,
+    messages: [{ role: 'user', content: `Hoy es ${today}. Frase: "${input}"` }],
+    maxTokens: 300,
+  })
+  return parseTaskResponse(text, today, input)
+}
+
+// Interpreta una tarea dictada. Un solo viaje: el modelo transcribe y estructura
+// a la vez, reutilizando el contrato de parseTaskResponse.
+export async function parseTaskFromAudio({ provider, apiKey, model, wavBase64, today }) {
+  if (provider !== 'openrouter') {
+    throw new Error('La entrada por voz requiere un modelo de OpenRouter.')
+  }
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 300,
+      messages: [
+        { role: 'system', content: TASK_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `Hoy es ${today}. Transcribe el audio y conviértelo en la tarea.` },
+            { type: 'input_audio', input_audio: { data: wavBase64, format: 'wav' } },
+          ],
+        },
+      ],
+    }),
+  })
+
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`)
+  const body = await res.json()
+  const text = body?.choices?.[0]?.message?.content || ''
+  return parseTaskResponse(text, today, '')
+}
+
+// Resumen en lenguaje natural del reporte ya calculado. La IA no calcula nada:
+// solo redacta a partir de las cifras que se le entregan.
+export async function summarizeReport({ provider, apiKey, model, report }) {
+  const lines = [
+    `Cumplimiento: ${report.completion.done} de ${report.completion.total} tareas (${report.completion.percent} %).`,
+    `Índice de entorno: ${report.environment.index ?? 'sin datos'}.`,
+    `Promedios: ${Object.entries(report.environment.average)
+      .map(([key, value]) => `${key} ${value}`)
+      .join(', ')}.`,
+    `Ventanas de concentración: ${report.focus.count} (${report.focus.totalMinutes} min).`,
+    `Patrón observado: ${report.pattern.headline}`,
+  ].join('\n')
+
+  return callModel({
+    provider,
+    apiKey,
+    model,
+    system: `${SYSTEM_PROMPT}
+
+Además de tu ámbito habitual, puedes comentar el rendimiento de la persona en sus tareas cuando se te entregue un reporte ya calculado. Redacta de dos a tres conclusiones breves en español, relacionando el ambiente con el cumplimiento. No inventes cifras que no estén en el reporte y no afirmes causalidad: los datos solo muestran coincidencia.
+
+Este texto se muestra en una tarjeta de la página de Reportes, donde NO existe ningún chat: la persona no puede responderte. Termina en la última conclusión y no ofrezcas resolver dudas, no invites a preguntar ni a continuar la conversación, y no te despidas. Una frase como "si tienes alguna duda, avísame" deja a la persona buscando un cuadro de texto que no existe.`,
+    messages: [{ role: 'user', content: lines }],
+    maxTokens: 400,
+  })
+}

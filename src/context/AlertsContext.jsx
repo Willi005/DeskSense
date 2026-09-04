@@ -1,12 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { useTelemetry } from './TelemetryContext'
 import { useSettings } from './SettingsContext'
-import { SENSORS, classify } from '../lib/sensors'
+import { SENSORS, classify, WATCH_KEYS } from '../lib/sensors'
 import { resolveModel } from '../lib/models'
 import { generateAlertAdvice } from '../lib/ai'
 
-// Métricas con niveles de calidad relevantes (excluye distancia/presencia).
-const WATCH_KEYS = ['temperatura', 'humedad', 'luz', 'ruido', 'pm25', 'pm1', 'pm10']
 const COOLDOWN_MS = 5 * 60 * 1000 // no repetir la misma métrica antes de 5 min
 const MAX_TOASTS = 3
 

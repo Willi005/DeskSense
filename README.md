@@ -35,6 +35,20 @@ La versión empaquetada está disponible en las
 - **Alertas automáticas**: cuando una métrica entra en nivel malo/crítico, muestra
   una nota en pantalla con un consejo de la IA y lanza una **notificación push del
   sistema** (funciona incluso con la app minimizada).
+- **Tareas**: modelo con título, fecha de vencimiento, prioridad (Alta/Media/Baja),
+  complejidad (Profunda/Ligera), minutos estimados y estado. Tres caminos de entrada:
+  texto en lenguaje natural (interpretado por IA con respaldo determinista), voz, y
+  formulario manual. Se guardan en `~/.config/desksense/desksense-data.json` vía
+  puente IPC.
+- **Reportes de rendimiento**: períodos Hoy y Esta semana (lunes a domingo) con
+  porcentaje de cumplimiento de tareas, Índice de Entorno (0–100, que
+  clasifica el entorno en cada instante del período y promedia esos puntajes, de modo
+  que una jornada inestable no se disfrace de perfecta) y el "patrón observado" que agrupa las tareas
+  completadas según la calidad del entorno del momento.
+- **Ventanas de concentración**: máquina de estados que avisa cuando el entorno lleva
+  10 minutos continuos en nivel óptimo con presencia, sugiriendo la tarea profunda
+  pendiente de mayor prioridad. Enfriamiento de 60 minutos para no abrumar. Se
+  registran para los reportes.
 - **Apariencia**: tema **claro/oscuro** (glass en ambos) y la opción de
   **habilitar/deshabilitar sensores** del panel (los deshabilitados se pausan en el
   Dashboard y se excluyen de las alertas y del contexto de la IA).
@@ -61,6 +75,30 @@ npm run dev
 # Build de producción + ejecutar en Electron
 npm start
 ```
+
+## Simulador de telemetría
+
+Publica telemetría sintética a ThingsBoard sin necesidad del ESP32 físico. Escenarios
+disponibles: `optimo`, `degradado`, `critico` y `jornada` (ciclo completo de un día
+laboral).
+
+```bash
+# Tiempo real: publica cada 3 segundos
+node scripts/simulator.mjs --escenario=optimo
+
+# Modo acelerado: genera historial completo de 7 días
+# Cada tick son 6 minutos (aceleración ×120)
+# 1680 ciclos cubren 7 días
+node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=1680
+
+# 240 ciclos cubren 24 horas
+node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=240
+```
+
+El simulador envía su propio `ts` (marca de tiempo), lo que corrige automáticamente
+el desfase horario que de otro modo sufriría el historial. En modo acelerado, el
+historial se construye hacia atrás desde el presente, garantizando que ningún punto
+caiga en el futuro.
 
 ## Empaquetar (instalador)
 

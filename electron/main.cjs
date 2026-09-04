@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron')
 const path = require('path')
+const { registerStoreIpc } = require('./store.cjs')
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -30,6 +31,12 @@ function createWindow() {
   })
 
   win.once('ready-to-show', () => win.show())
+
+  // El renderer pide el micrófono para la entrada de tareas por voz. Se conceden
+  // solo los permisos de medios; el resto se deniega.
+  win.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media')
+  })
 
   // Open target=_blank links in the system browser instead of a new window.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -92,6 +99,7 @@ app.whenReady().then(() => {
   app.setName('DeskSense')
   // Necesario para que las notificaciones nativas se muestren en Windows.
   if (process.platform === 'win32') app.setAppUserModelId('com.monitoreo.escritorio')
+  registerStoreIpc(ipcMain)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

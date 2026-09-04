@@ -176,6 +176,20 @@ export default function Settings({ onConnected }) {
                   onChange={() => setForm((f) => ({ ...f, alertsEnabled: f.alertsEnabled === false }))}
                 />
               </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white/75">Ventanas de concentración</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-white/40">
+                    Avisa cuando tu entorno lleve 10 minutos en condiciones óptimas y te
+                    sugiere una tarea que exija concentración.
+                  </p>
+                </div>
+                <Toggle
+                  checked={form.focusEnabled !== false}
+                  onChange={() => setForm((f) => ({ ...f, focusEnabled: f.focusEnabled === false }))}
+                />
+              </div>
             </div>
           </GlassCard>
 

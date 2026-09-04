@@ -387,7 +387,10 @@ Crear `scripts/simulator.mjs`:
 //
 // Uso:
 //   node scripts/simulator.mjs --escenario=optimo
-//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=2400
+//   node scripts/simulator.mjs --escenario=jornada --acelerado=120 --ciclos=240
+//
+// Cada tick representa 3 s x aceleracion de tiempo simulado. Con --acelerado=120
+// cada tick son 6 min, de modo que 240 ciclos cubren 24 h y 1680 cubren 7 dias.
 import { readFileSync, existsSync } from 'node:fs'
 import { sampleScenario, SCENARIO_NAMES } from './simulator/scenarios.mjs'
 import { resolveDeviceToken, publish } from './simulator/device.mjs'
@@ -405,10 +408,15 @@ function parseArgs(argv) {
 }
 
 // Lector mínimo de .env: el simulador no depende de dotenv.
+// El grupo del valor es NO codicioso (`.*?`) para que `\s*$` recorte de verdad
+// los espacios finales. Con `.*` codicioso, un valor con espacios al final se
+// quedaba con ellos dentro y, si además iba entrecomillado, el recorte de
+// comillas dejaba una comilla suelta pegada al valor — rompiendo el host o el
+// token en silencio, que es el peor modo de fallo posible aquí.
 function loadEnv() {
   if (!existsSync('.env')) return
   for (const line of readFileSync('.env', 'utf8').split('\n')) {
-    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/)
+    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
     if (match) process.env[match[1]] ??= match[2].replace(/^["']|["']$/g, '')
   }
 }
@@ -444,6 +452,25 @@ async function main() {
 
   const speed = Number(args.acelerado || 1)
   const cycles = args.ciclos ? Number(args.ciclos) : Infinity
+
+  // Un argumento no numérico produciría NaN y acabaría escribiendo `ts: null`
+  // en el payload, corrompiendo la marca de tiempo sin que nada lo delate.
+  if (!Number.isFinite(speed) || speed <= 0) {
+    console.error('--acelerado debe ser un número mayor que 0.')
+    process.exit(1)
+  }
+  if (args.ciclos && (!Number.isFinite(cycles) || cycles <= 0)) {
+    console.error('--ciclos debe ser un número entero mayor que 0.')
+    process.exit(1)
+  }
+  // En modo acelerado el historial se sitúa hacia atrás desde ahora, así que
+  // hace falta saber cuántos puntos son. Sin ese límite el reloj simulado
+  // seguiría avanzando más rápido que el real y acabaría publicando en el futuro.
+  if (speed > 1 && !Number.isFinite(cycles)) {
+    console.error('--acelerado requiere --ciclos para saber cuánto historial generar.')
+    process.exit(1)
+  }
+
   const host = process.env.TB_HOST || 'http://200.13.5.20:8080'
   const deviceName = process.env.TB_DEVICE_NAME || 'monitoreo-escritorio'
 
@@ -459,12 +486,19 @@ async function main() {
   console.log('Ctrl+C para detener.')
 
   const presenceOf = makePresence()
-  // Con aceleración, se retrocede el inicio para que el historial generado quede
-  // en el pasado y termine en el momento actual.
-  const wallClockMs = Math.min(cycles, 100000) * PUBLISH_INTERVAL_MS * speed
-  let simulatedTs = Date.now() - (speed > 1 ? wallClockMs : 0)
+  const step = PUBLISH_INTERVAL_MS * speed
+
+  // Marca de tiempo de cada punto. En modo acelerado el historial se construye
+  // hacia atrás DESDE AHORA: cada punto se sitúa a los pasos que le falten para
+  // llegar al final, de modo que el último caiga exactamente en el presente y
+  // ninguno pueda quedar en el futuro. Calcularlo contra Date.now() en cada
+  // iteración lo hace además inmune al tiempo real que tarde el bucle en
+  // completar las peticiones: un reloj simulado acumulado se iba desfasando.
+  const timestampFor = (tick) =>
+    speed > 1 ? Date.now() - (cycles - 1 - tick) * step : Date.now()
 
   for (let tick = 0; tick < cycles; tick++) {
+    const simulatedTs = timestampFor(tick)
     const present = presenceOf(tick)
     const sample = sampleScenario(scenario, tick)
 
@@ -483,7 +517,8 @@ async function main() {
       console.warn(`tick ${tick}: ${err.message}`)
     }
 
-    simulatedTs += PUBLISH_INTERVAL_MS * speed
+    // En tiempo real se espera la cadencia del firmware; en modo acelerado no,
+    // porque el reloj lo marca `timestampFor`, no la espera.
     if (speed === 1) await new Promise((r) => setTimeout(r, PUBLISH_INTERVAL_MS))
   }
 }
@@ -537,10 +572,12 @@ Esperado: el dashboard muestra valores en vivo y, a los pocos segundos, se dispa
 - [ ] **Paso 6: Generar historial para los reportes**
 
 ```bash
-npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=2400
+npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=240
 ```
 
-Esperado: publica una jornada completa comprimida. Verificar en la página de Historial, con rango de 24 h, que la curva cubre la ventana completa.
+Cada tick representa `3 s x aceleracion` de tiempo simulado: con `--acelerado=120` cada tick son 6 minutos, así que **240 ciclos cubren exactamente 24 horas**. Para el reporte semanal hacen falta `--ciclos=1680` (7 días).
+
+Esperado: el historial queda poblado y el último punto cae en el momento actual. Verificar en la página de Historial, con rango de 24 h, que la curva cubre la ventana completa sin hueco al final.
 
 - [ ] **Paso 7: Commit**
 
@@ -847,8 +884,20 @@ const VALID_PRIORITIES = Object.keys(PRIORITY_LABELS)
 const VALID_COMPLEXITIES = Object.keys(COMPLEXITY_LABELS)
 const VALID_SOURCES = ['text', 'voice', 'form']
 
+// Formato de fecha aceptado. Se valida en la entrada para que ninguna tarea
+// quede con una fecha que después no se pueda interpretar.
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+// Una jornada de trabajo como techo razonable: valores negativos, cero o
+// absurdos no son estimaciones, son errores de entrada.
+const MAX_ESTIMATED_MINUTES = 24 * 60
+
 function oneOf(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback
+}
+
+function isValidMinutes(value) {
+  return Number.isFinite(value) && value > 0 && value <= MAX_ESTIMATED_MINUTES
 }
 
 export function createTask({
@@ -863,10 +912,13 @@ export function createTask({
     id: crypto.randomUUID(),
     title: String(title || '').trim(),
     createdAt: Date.now(),
-    dueDate: dueDate || null,
+    // Una fecha con formato inesperado se descarta en vez de guardarse: si se
+    // guardara, `tasksInRange` la convertiría en NaN y la tarea desaparecería de
+    // todos los períodos sin que nada lo delatara.
+    dueDate: DATE_KEY_PATTERN.test(dueDate) ? dueDate : null,
     priority: oneOf(priority, VALID_PRIORITIES, 'medium'),
     complexity: oneOf(complexity, VALID_COMPLEXITIES, 'shallow'),
-    estimatedMinutes: Number.isFinite(estimatedMinutes) ? estimatedMinutes : null,
+    estimatedMinutes: isValidMinutes(estimatedMinutes) ? Math.round(estimatedMinutes) : null,
     status: 'pending',
     completedAt: null,
     source: oneOf(source, VALID_SOURCES, 'form'),
@@ -979,38 +1031,72 @@ export function TasksProvider({ children }) {
       .read()
       .then((data) => {
         if (cancelled) return
-        setTasks(data?.tasks || [])
-        setFocusWindows(data?.focusWindows || [])
+        // Se fusiona en vez de reemplazar: si la persona añadió algo mientras la
+        // lectura estaba en vuelo, reemplazar lo descartaría en silencio.
+        setTasks((prev) => [...prev, ...(data?.tasks || [])])
+        setFocusWindows((prev) => [...prev, ...(data?.focusWindows || [])])
+        // La escritura solo se habilita tras una lectura CORRECTA. Si la lectura
+        // falla y aun así permitiéramos escribir, el primer cambio guardaría el
+        // estado vacío encima del archivo real y borraría los datos.
+        loadedRef.current = true
       })
       .catch(() => {})
       .finally(() => {
-        if (cancelled) return
-        setLoading(false)
-        loadedRef.current = true
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
   }, [])
 
+  // Espejo del estado para poder volcarlo desde manejadores que no se recrean
+  // en cada render (desmontaje y cierre de ventana).
+  const stateRef = useRef({ tasks, focusWindows })
+  stateRef.current = { tasks, focusWindows }
+
+  const persist = useCallback(() => {
+    const store = typeof window !== 'undefined' ? window.electronAPI?.store : null
+    if (!store || !loadedRef.current) return
+    const { tasks, focusWindows } = stateRef.current
+    // Lectura previa para conservar cualquier clave del archivo que este
+    // contexto no gestione.
+    store
+      .read()
+      .then((current) => store.write({ ...current, version: 1, tasks, focusWindows }))
+      .catch(() => {})
+  }, [])
+
   // Persistencia con debounce. No escribe antes de la carga inicial, para no
   // sobrescribir el archivo con el estado vacío del primer render.
   useEffect(() => {
     if (!loadedRef.current) return
-    const store = typeof window !== 'undefined' ? window.electronAPI?.store : null
-    if (!store) return
-
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
-      store.read().then((current) => {
-        store.write({ ...current, version: 1, tasks, focusWindows }).catch(() => {})
-      })
+      timerRef.current = null
+      persist()
     }, WRITE_DEBOUNCE_MS)
-
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [tasks, focusWindows])
+  }, [tasks, focusWindows, persist])
+
+  // Volcado de la escritura pendiente al desmontar o al cerrar la ventana. Sin
+  // esto, cualquier cambio hecho en los últimos WRITE_DEBOUNCE_MS antes de
+  // cerrar la app se descartaba en silencio: el cleanup cancelaba el temporizador
+  // sin llegar a guardar nada.
+  useEffect(() => {
+    const flushPending = () => {
+      if (timerRef.current == null) return
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+      persist()
+    }
+    window.addEventListener('beforeunload', flushPending)
+    return () => {
+      window.removeEventListener('beforeunload', flushPending)
+      flushPending()
+    }
+  }, [persist])
 
   const addTask = useCallback((fields) => {
     const task = createTask(fields)
@@ -1208,12 +1294,20 @@ export function parseTaskResponse(text, today, originalInput) {
     if (!match) return fallback
 
     const parsed = JSON.parse(match[0])
-    const title = String(parsed.title || '').trim()
+    // El título tiene que ser texto de verdad. Con `String(parsed.title)`, un
+    // objeto se convertiría en "[object Object]" y un array en "a,b": basura que
+    // acabaría mostrándose en pantalla en lugar de caer al respaldo y conservar
+    // lo que la persona escribió, que es la garantía central de esta función.
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : ''
     if (!title) return fallback
 
     return {
       title,
       dueDate: DATE_PATTERN.test(parsed.dueDate) ? parsed.dueDate : today,
+      // `priority` y `complexity` se pasan tal cual a propósito: `createTask`
+      // los valida contra su lista blanca y cae a los valores por defecto ante
+      // cualquier cosa inesperada. Validar aquí también sería duplicar esa regla
+      // en dos sitios que tendrían que mantenerse sincronizados.
       priority: parsed.priority,
       complexity: parsed.complexity,
       estimatedMinutes: Number.isFinite(parsed.estimatedMinutes) ? parsed.estimatedMinutes : null,
@@ -1342,7 +1436,16 @@ function TaskItem({ task, onToggle, onEdit, onRemove }) {
 export default memo(TaskItem)
 ```
 
-> `Icon` es un envoltorio de Lucide React. Verificar en `src/components/Icon.jsx` cómo se mapean los nombres y registrar allí `check` y `trash` si el componente usa un mapa explícito en lugar de pasar el nombre directo.
+> **`Icon` usa un mapa explícito y hay que ampliarlo primero.** `src/components/Icon.jsx` define `const MAP = { ... }` y cae a `Activity` ante un nombre desconocido, **sin avisar**: un icono mal nombrado no da error, solo aparece el icono equivocado. `check` ya existe (mapea a `CheckCircle2`), pero **faltan `trash`, `mic`, `check-square` y `bar-chart`**, que usan esta tarea y las Tareas 7 y 9. Antes de escribir los componentes, añadir a la importación de `lucide-react` y al mapa:
+>
+> ```js
+>   trash: Trash2,
+>   mic: Mic,
+>   'check-square': CheckSquare,
+>   'bar-chart': BarChart3,
+> ```
+>
+> con `Trash2`, `Mic`, `CheckSquare` y `BarChart3` añadidos a la lista de importaciones del principio del archivo.
 
 - [ ] **Paso 2: Crear el compositor de tareas**
 
@@ -1418,15 +1521,23 @@ export default function TaskComposer({ onCreate }) {
 Crear `src/components/TaskFormDialog.jsx`. Es también la red de seguridad cuando no hay API key configurada.
 
 ```jsx
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { PRIORITY_LABELS, COMPLEXITY_LABELS, toDateKey } from '../lib/tasks'
 
-const FIELD = 'w-full rounded-xl bg-white/[0.06] px-3 py-2 text-sm text-white/90 outline-none ring-1 ring-white/10 focus:ring-white/25'
+// Mismas clases que `inputCls` de Settings.jsx, para que los controles del
+// diálogo no desentonen con el resto de la aplicación.
+const FIELD =
+  'w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white/90 placeholder-white/30 outline-none transition-colors focus:border-accent/60'
 
 export default function TaskFormDialog({ task, onSave, onClose }) {
+  const dialogRef = useRef(null)
   const [form, setForm] = useState({
     title: task?.title || '',
-    dueDate: task?.dueDate || toDateKey(),
+    // Al EDITAR se conserva la ausencia de fecha. Poner la de hoy por defecto
+    // aquí haría que corregir el título de una tarea sin fecha le asignara una
+    // en silencio, cambiando el período al que pertenece sin que nadie lo pida.
+    // Al CREAR sí tiene sentido proponer hoy.
+    dueDate: task ? task.dueDate || '' : toDateKey(),
     priority: task?.priority || 'medium',
     complexity: task?.complexity || 'shallow',
     estimatedMinutes: task?.estimatedMinutes ?? '',
@@ -1442,10 +1553,47 @@ export default function TaskFormDialog({ task, onSave, onClose }) {
     onSave({
       ...form,
       title: form.title.trim(),
+      dueDate: form.dueDate || null,
       estimatedMinutes: form.estimatedMinutes === '' ? null : Number(form.estimatedMinutes),
       source: 'form',
     })
   }
+
+  // `role="dialog"` con `aria-modal` promete un comportamiento modal: cerrarse
+  // con Escape y no dejar que el foco se escape por detrás del overlay. Sin esto
+  // los atributos anuncian algo que la interfaz no cumple.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement
+
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const items = dialogRef.current.querySelectorAll(
+        'input:not([disabled]), select:not([disabled]), button:not([disabled])'
+      )
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      // Devolver el foco a donde estaba evita que quede perdido al cerrar.
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
+    }
+  }, [onClose])
 
   return (
     <div
@@ -1456,6 +1604,7 @@ export default function TaskFormDialog({ task, onSave, onClose }) {
       onClick={onClose}
     >
       <form
+        ref={dialogRef}
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
         className="glass w-full max-w-md space-y-4 rounded-3xl p-6"
@@ -1534,7 +1683,7 @@ export default function TaskFormDialog({ task, onSave, onClose }) {
           <button
             type="submit"
             disabled={!form.title.trim()}
-            className="rounded-xl bg-accent px-4 py-2 text-sm text-white transition-opacity disabled:opacity-40"
+            className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-accent-deep active:scale-[0.99] disabled:opacity-40"
           >
             Guardar
           </button>
@@ -1784,25 +1933,56 @@ export async function startRecording() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const recorder = new MediaRecorder(stream)
   const chunks = []
+  let finished = false
+
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) chunks.push(event.data)
   }
   recorder.start()
 
+  // Cierra el micrófono pase lo que pase. Mientras haya una pista viva el
+  // sistema muestra el indicador de grabación encendido, así que liberarlas no
+  // es una cortesía: es lo que le dice a la persona que ya no se la escucha.
+  const releaseMicrophone = () => {
+    finished = true
+    stream.getTracks().forEach((track) => track.stop())
+  }
+
   return {
+    // Aborta sin procesar el audio. Lo usa el componente al desmontarse: sin
+    // esto, salir de la página a media grabación dejaba el micrófono abierto
+    // indefinidamente, porque las pistas solo se cerraban dentro de `onstop`.
+    cancel: () => {
+      if (finished) return
+      releaseMicrophone()
+      try {
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {
+        /* ya estaba detenido */
+      }
+    },
     stop: () =>
       new Promise((resolve, reject) => {
+        // Una segunda llamada reasignaba `onstop` y dejaba la primera promesa
+        // colgada para siempre. Se rechaza de forma explícita.
+        if (finished) {
+          reject(new Error('La grabación ya se había detenido.'))
+          return
+        }
         recorder.onstop = async () => {
-          stream.getTracks().forEach((track) => track.stop())
+          releaseMicrophone()
+          let context = null
           try {
             const raw = new Blob(chunks, { type: recorder.mimeType })
-            const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
+            context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
             const decoded = await context.decodeAudioData(await raw.arrayBuffer())
             const wav = encodeWav(decoded.getChannelData(0), decoded.sampleRate)
-            await context.close()
             resolve(await blobToBase64(wav))
           } catch (err) {
             reject(err)
+          } finally {
+            // El contexto se cierra también si la decodificación falla.
+            if (context) await context.close().catch(() => {})
           }
         }
         recorder.stop()
@@ -1879,7 +2059,7 @@ En `src/components/TaskComposer.jsx`, añadir las importaciones de `useRef`, `st
     try {
       const wavBase64 = await recorderRef.current.stop()
       const active = resolveModel(settings)
-      if (!active.apiKey) throw new Error('sin clave')
+      if (!active.apiKey) throw new Error('sin-clave')
       const fields = await parseTaskFromAudio({
         provider: active.provider,
         apiKey: active.apiKey,
@@ -1887,16 +2067,46 @@ En `src/components/TaskComposer.jsx`, añadir las importaciones de `useRef`, `st
         wavBase64,
         today: toDateKey(),
       })
-      if (!fields.title) throw new Error('sin transcripción')
+      if (!fields.title) throw new Error('sin-transcripcion')
       onCreate({ ...fields, source: 'voice' })
-    } catch {
-      // Nada se pierde: la persona puede escribir la tarea a continuación.
-      setVoiceError('No se pudo interpretar el audio. Escribe la tarea.')
+    } catch (err) {
+      // Nada se pierde: la persona puede escribir la tarea a continuación. Pero
+      // el motivo importa: decir "no se entendió el audio" cuando el problema es
+      // la cuenta manda a buscar el fallo donde no está.
+      setVoiceError(describeVoiceError(err))
     } finally {
       recorderRef.current = null
       setBusy(false)
     }
   }
+```
+
+Y, fuera del componente, la función que traduce el fallo a una causa accionable:
+
+```jsx
+// Distingue las causas de fallo de la voz. Cada una se arregla en un sitio
+// distinto, así que colapsarlas en un único mensaje deja a la persona sin saber
+// dónde mirar. El caso del saldo es real y frecuente: los modelos cobran el
+// audio aparte y exigen un mínimo de crédito.
+function describeVoiceError(err) {
+  const detalle = String(err?.message || '')
+  if (detalle.includes('sin-clave')) {
+    return 'Falta la API key del modelo. Configúrala en Configuración.'
+  }
+  if (detalle.includes('requiere un modelo de OpenRouter')) {
+    return 'La voz necesita un modelo de OpenRouter. Cámbialo en el selector.'
+  }
+  if (detalle.includes('402')) {
+    return 'Tu cuenta de OpenRouter no tiene saldo suficiente para audio.'
+  }
+  if (detalle.includes('401') || detalle.includes('403')) {
+    return 'La API key fue rechazada. Revísala en Configuración.'
+  }
+  if (detalle.includes('sin-transcripcion')) {
+    return 'No se entendió el dictado. Inténtalo de nuevo o escribe la tarea.'
+  }
+  return 'No se pudo procesar el audio. Escribe la tarea.'
+}
 ```
 
 Y el botón, antes del botón de envío dentro del formulario:
@@ -1920,6 +2130,14 @@ El estado de grabación se comunica con el `aria-label` además del color, para 
 ```jsx
       {voiceError && <p className="px-1 pt-1 text-xs text-status-bad">{voiceError}</p>}
 ```
+
+Y una limpieza al desmontar, para que salir de la página a media grabación no deje el micrófono abierto:
+
+```jsx
+  useEffect(() => () => recorderRef.current?.cancel?.(), [])
+```
+
+Requiere añadir `useEffect` a la importación de React del componente.
 
 - [ ] **Paso 6: Verificar de extremo a extremo**
 
@@ -2422,7 +2640,7 @@ export default function Reports({ onNavigate }) {
         </button>
         {summary && (
           <div className="glass rounded-2xl px-5 py-4 text-sm text-white/80">
-            <Markdown>{summary}</Markdown>
+            <Markdown text={summary} />
           </div>
         )}
       </div>
@@ -2431,7 +2649,7 @@ export default function Reports({ onNavigate }) {
 }
 ```
 
-> Verificar en `src/components/Markdown.jsx` si recibe el texto como `children` o como una prop; ajustar esa línea al contrato real del componente.
+> `Markdown` recibe el texto por la prop `text` (`Markdown({ text, className })`), no como `children`. Verificado en `src/components/Markdown.jsx:16`.
 
 - [ ] **Paso 3: Añadir el resumen por IA**
 
@@ -2483,8 +2701,10 @@ En `src/App.jsx`, importar `Reports` y añadir el render condicional. La página
 - [ ] **Paso 5: Verificar con datos reales**
 
 ```bash
-npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=2400
+npm run simulate -- --escenario=jornada --acelerado=120 --ciclos=1680
 ```
+
+(1680 ciclos a 6 min por tick cubren los 7 días que necesita el reporte semanal.)
 
 Después, en la aplicación: crear tres o cuatro tareas con fecha de hoy, completar algunas, y abrir Reportes.
 
@@ -2669,7 +2889,12 @@ export function nextFocusState(state, { now, optimal }) {
       if (now - state.since < FOCUS_HOLD_MS) return none
       // Se activa igualmente durante el enfriamiento: así la ventana queda
       // registrada para el reporte aunque no se avise a la persona.
-      const notify = now - state.lastNotifyTs >= FOCUS_COOLDOWN_MS
+      // `lastNotifyTs === 0` significa "nunca se ha notificado" y debe avisar sin
+      // exigir el enfriamiento. Sin ese caso explícito, la resta funcionaría por
+      // accidente con marcas de tiempo reales (epoch, del orden de 1,8e12) pero
+      // no con las pequeñas de las pruebas, escondiendo la intención del diseño
+      // detrás de la magnitud de los números.
+      const notify = state.lastNotifyTs === 0 || now - state.lastNotifyTs >= FOCUS_COOLDOWN_MS
       return {
         state: { ...state, phase: 'active', lastNotifyTs: notify ? now : state.lastNotifyTs },
         notify,
@@ -2830,26 +3055,27 @@ En `src/main.jsx`, anidar `FocusProvider` como el más interno:
 
 - [ ] **Paso 4: Añadir el interruptor a Configuración**
 
-En `src/pages/Settings.jsx`, junto al interruptor de alertas existente, añadir el de concentración replicando su marcado:
+En `src/pages/Settings.jsx`, junto al interruptor de alertas existente (alrededor de la línea 174), añadir el de concentración.
+
+**Importante:** la página no escribe en los ajustes directamente. Mantiene un estado local `form` (`const [form, setForm] = useState(settings)`, línea 47) y lo vuelca con `update({ ...form, ... })` al enviar (línea 82). El interruptor nuevo debe seguir ese mismo patrón, **no** llamar a `update` por su cuenta:
 
 ```jsx
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-white/90">Ventanas de concentración</p>
-            <p className="mt-1 text-xs leading-relaxed text-white/45">
-              Avisa cuando tu entorno lleve 10 minutos en condiciones óptimas y te sugiere
-              una tarea que exija concentración.
-            </p>
-          </div>
-          <Toggle
-            checked={settings.focusEnabled !== false}
-            onChange={() => update({ focusEnabled: settings.focusEnabled === false })}
-            aria-label="Activar ventanas de concentración"
-          />
-        </div>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-white/90">Ventanas de concentración</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-white/40">
+                    Avisa cuando tu entorno lleve 10 minutos en condiciones óptimas y te
+                    sugiere una tarea que exija concentración.
+                  </p>
+                </div>
+                <Toggle
+                  checked={form.focusEnabled !== false}
+                  onChange={() => setForm((f) => ({ ...f, focusEnabled: f.focusEnabled === false }))}
+                />
+              </div>
 ```
 
-> Ajustar los nombres `update` y las clases al marcado real del interruptor de alertas que ya existe en el archivo, para que ambos queden idénticos.
+Copiar las clases exactas del bloque de alertas contiguo para que ambos queden idénticos.
 
 - [ ] **Paso 5: Verificar el disparo**
 

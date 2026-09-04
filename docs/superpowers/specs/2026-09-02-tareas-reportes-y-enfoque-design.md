@@ -60,7 +60,12 @@ alimenta ni consume nada del resto del sistema.
 - Sincronización de tareas entre equipos o con servicios externos.
 - Correlación estadística formal (ver la sección 8.3: se declara explícitamente como patrón descriptivo).
 - Firma de código del instalador.
-- Cambios en el firmware del ESP32.
+
+> **Ampliación posterior del alcance.** El firmware del ESP32 se declaró fuera de alcance en
+> el diseño original y sí se modificó al armar el prototipo: sincronización NTP con marca de
+> tiempo propia, credenciales fuera del archivo versionado, configuración de PlatformIO y su
+> documentación. Entraron en commits separados y quedan registrados aquí para que el alcance
+> escrito coincida con lo que la rama contiene.
 
 ---
 
@@ -282,10 +287,18 @@ reutilizan `getTimeseries` y `classify`.
 
 **Cumplimiento:** `done / total` de las tareas del período.
 
-**Índice de Entorno (0–100):** promedio de los niveles de cada sensor vigilado y habilitado,
-mapeando `good = 100`, `moderate = 66`, `bad = 33`, `severe = 0`. Se calcula sobre los
-valores agregados del período. Si no hay ningún sensor con dato, el índice es `null` y la
-interfaz lo muestra como "sin datos" en lugar de como cero.
+**Índice de Entorno (0–100):** se clasifica el entorno en **cada instante** del período
+—mapeando `good = 100`, `moderate = 66`, `bad = 33`, `severe = 0`— y se promedian esos
+puntajes. Si no hay ningún sensor con dato, el índice es `null` y la interfaz lo muestra
+como "sin datos" en lugar de como cero.
+
+> El diseño original promediaba los **valores** de cada sensor y clasificaba el resultado.
+> Se cambió tras medirlo con datos reales: una jornada en la que la luz osciló entre 0 %
+> (oscuridad) y 98,9 % (deslumbramiento) y la humedad rozó el umbral crítico daba un índice
+> de 100 sobre 100, porque el promedio de cada sensor caía en su rango bueno. Promediar
+> primero escondía justo la varianza que un índice de calidad debe reflejar. La pregunta
+> que responde el índice pasó a ser "qué parte del tiempo el entorno acompañó", que es la
+> útil para un reporte de rendimiento.
 
 **Ventanas de concentración:** cantidad y minutos totales del período.
 
@@ -452,7 +465,71 @@ con Linux, y se actualiza el MOC y el canvas. La bóveda se escribe en español.
 
 ---
 
-## 13. Riesgos
+## 13. Renovación de sesión de ThingsBoard
+
+Añadida durante la puesta en marcha del prototipo, después del diseño original. El JWT de
+ThingsBoard dura **150 minutos** y su refresh token **7 días** (medidos contra el servidor
+del proyecto). Sin renovación, la aplicación se quedaba mostrando "Sin datos" cada dos horas
+y media hasta que alguien volvía a conectar a mano desde Configuración.
+
+### 12.1 Tres niveles
+
+`createTokenRefresher` (`src/lib/auth.js`) resuelve el token en el orden más barato primero:
+
+1. **El token vigente**, si le queda más de 5 minutos de vida. El margen cubre relojes
+   ligeramente desfasados y peticiones lentas: no sirve un token que caduca en tránsito.
+2. **Renovación con el refresh token** — una petición, sin credenciales.
+3. **Login completo** con el usuario y la contraseña guardados.
+
+Si fallan los tres, lanza un error que nombra la acción concreta: volver a conectar desde
+Configuración.
+
+### 12.2 Por qué es una fábrica con dependencias inyectadas
+
+La máquina de decisión no depende de React ni de la red, así que se prueba entera. Es lo
+que permitió cubrir el guard de concurrencia y el freno anti-bucle, que son la parte
+delicada y la que efectivamente contenía un fallo.
+
+### 12.3 Dos protecciones que no son opcionales
+
+**Guard de concurrencia.** El WebSocket, Reportes e Historial pueden pedir token a la vez;
+comparten una única renovación. La limpieza del hueco se engancha **después** de guardar la
+promesa: al revés, un fallo inmediato limpiaba antes de la asignación y dejaba dentro la
+promesa ya rechazada, de modo que toda llamada posterior recibía ese rechazo sin intentar
+nada. La sesión no se recuperaba ni reintroduciendo las credenciales, solo reiniciando.
+
+**Freno anti-bucle** (`MIN_REFRESH_INTERVAL_MS`). Renovar guarda el token nuevo, eso
+reejecuta los efectos que dependen de él, y esos vuelven a pedir renovación. Si el token
+recién emitido sigue pareciendo vencido —reloj desfasado, TTL del servidor más corto que el
+margen, o un `exp` ilegible— el ciclo no se cierra solo. Dentro del intervalo mínimo se
+devuelve el token que haya, aunque esté vencido: una petición que falla con 401 es un
+problema acotado, un bucle de renovación es un problema que crece.
+
+Por lo mismo, `jwt` **no** está en las dependencias del efecto del WebSocket: el socket pide
+su propio token en cada conexión, e incluirlo realimentaba el ciclo.
+
+### 12.4 Coste en seguridad, declarado
+
+El refresh token de 7 días y la contraseña viven en `localStorage` en texto plano. La
+contraseña ya se guardaba antes, pero solo se usaba en el "Conectar" manual; ahora se
+reproduce automáticamente en segundo plano. Una fuga del almacenamiento pasa de dar acceso
+acotado a darlo indefinido, y `webSecurity: false` (preexistente) desactiva la política de
+mismo origen. Mitigación pendiente: mover ambos al proceso principal detrás de
+`safeStorage`, reutilizando el puente IPC que esta misma entrega construyó.
+
+## 14. Vigencia de la telemetría
+
+Las ventanas de concentración exigen además que la telemetría sea reciente
+(`MAX_TELEMETRY_AGE_MS`, 60 s). Los valores en memoria son los **últimos recibidos** y
+sobreviven a que el dispositivo deje de publicar: sin esta comprobación, una caída del WiFi
+del ESP32 mientras alguien está en el escritorio acreditaba horas de concentración que nunca
+ocurrieron. Medido: una ventana falsa de 266 minutos tras detener la fuente de datos.
+
+La antigüedad se mide con un sello de llegada **local**, no con el `ts` del dispositivo:
+ese lo pone el ESP32 (su NTP) o el servidor de ThingsBoard, y compararlo contra el reloj del
+equipo mezclaba dos relojes cuyo desfase falseaba la vigencia en ambos sentidos.
+
+## 15. Riesgos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|

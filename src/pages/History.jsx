@@ -26,7 +26,7 @@ function toLocalInput(ts) {
 }
 
 export default function History({ onNavigate }) {
-  const { settings, isConfigured } = useSettings()
+  const { settings, isConfigured, ensureFreshToken } = useSettings()
   const [preset, setPreset] = useState('24h')
   const [custom, setCustom] = useState(false)
   const [start, setStart] = useState(() => toLocalInput(Date.now() - 24 * 3600 * 1000))
@@ -56,7 +56,7 @@ export default function History({ onNavigate }) {
       const interval = Math.max(1000, Math.round((endTs - startTs) / 600))
       const data = await getTimeseries(
         settings.tbHost,
-        settings.jwt,
+        await ensureFreshToken(),
         settings.deviceId,
         KEYS,
         startTs,
