@@ -84,6 +84,18 @@ describe('buildReport', () => {
     expect(report.pattern.headline).toContain('1 de 1')
   })
 
+  it('no inventa un nivel cuando no hay telemetría del momento', () => {
+    // Sin serie, levelAt devuelve 'unknown', cuya etiqueta es "Sin datos". La
+    // frase quedaba como "con el entorno en nivel Sin datos", que no dice nada.
+    const tasks = [
+      { id: 'a', title: 'A', dueDate: '2026-09-02', status: 'done', completedAt: 1000 },
+      { id: 'b', title: 'B', dueDate: '2026-09-02', status: 'done', completedAt: 2000 },
+    ]
+    const report = buildReport({ tasks, series: {}, focusWindows: [], range, disabled: [] })
+    expect(report.pattern.headline).not.toMatch(/nivel Sin datos/i)
+    expect(report.pattern.headline).toMatch(/no hay datos del entorno/i)
+  })
+
   it('no afirma un patrón sin tareas completadas', () => {
     const report = buildReport({ tasks: [], series, focusWindows: [], range, disabled: [] })
     expect(report.pattern.headline).toMatch(/sin tareas completadas/i)

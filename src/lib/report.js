@@ -72,6 +72,17 @@ function buildPattern(completed, series, disabled) {
   }
 
   const [topLevel, count] = Object.entries(byLevel).sort((a, b) => b[1] - a[1])[0]
+
+  // Sin telemetría del momento en que se completaron las tareas no hay patrón
+  // que observar. Decirlo así evita la frase "con el entorno en nivel Sin datos",
+  // que aparentaba una conclusión donde solo faltaban mediciones.
+  if (topLevel === 'unknown') {
+    const plural = completed.length === 1
+      ? '1 tarea, pero no hay datos del entorno de ese momento para compararla'
+      : `${completed.length} tareas, pero no hay datos del entorno de esos momentos para compararlas`
+    return { byLevel, headline: `Completaste ${plural}.` }
+  }
+
   const label = LEVELS[topLevel]?.label || 'desconocido'
   return {
     byLevel,
