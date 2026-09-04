@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  isTelemetryFresh,
+  MAX_TELEMETRY_AGE_MS,
   isOptimal,
   nextFocusState,
   INITIAL_FOCUS_STATE,
@@ -95,5 +97,23 @@ describe('nextFocusState', () => {
     expect(state.phase).toBe('idle')
     expect(notify).toBe(false)
     expect(closedWindow).toBeNull()
+  })
+})
+
+describe('isTelemetryFresh', () => {
+  it('acepta telemetría recién llegada', () => {
+    const ahora = 1_000_000
+    expect(isTelemetryFresh(ahora - 5000, ahora)).toBe(true)
+  })
+
+  it('rechaza telemetría vieja: un dispositivo caído deja los valores congelados', () => {
+    const ahora = 1_000_000
+    expect(isTelemetryFresh(ahora - MAX_TELEMETRY_AGE_MS - 1, ahora)).toBe(false)
+  })
+
+  it('rechaza cuando no ha llegado ningún dato', () => {
+    expect(isTelemetryFresh(0, 1_000_000)).toBe(false)
+    expect(isTelemetryFresh(null, 1_000_000)).toBe(false)
+    expect(isTelemetryFresh(undefined, 1_000_000)).toBe(false)
   })
 })

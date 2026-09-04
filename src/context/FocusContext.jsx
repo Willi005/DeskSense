@@ -2,7 +2,13 @@ import { createContext, useContext, useEffect, useRef, useState, useMemo } from 
 import { useTelemetry } from './TelemetryContext'
 import { useSettings } from './SettingsContext'
 import { useTasks } from './TasksContext'
-import { isOptimal, nextFocusState, INITIAL_FOCUS_STATE, FOCUS_HOLD_MS } from '../lib/focus'
+import {
+  isOptimal,
+  isTelemetryFresh,
+  nextFocusState,
+  INITIAL_FOCUS_STATE,
+  FOCUS_HOLD_MS,
+} from '../lib/focus'
 import { nextDeepTask } from '../lib/tasks'
 
 const FocusContext = createContext(null)
@@ -20,7 +26,7 @@ const holdLabel =
     : `${Math.round(FOCUS_HOLD_MS / 1000)} segundos`
 
 export function FocusProvider({ children }) {
-  const { values, presence } = useTelemetry()
+  const { values, presence, lastUpdate } = useTelemetry()
   const { settings } = useSettings()
   const { tasks, addFocusWindow } = useTasks()
   const [phase, setPhase] = useState('idle')
@@ -28,14 +34,18 @@ export function FocusProvider({ children }) {
   const stateRef = useRef(INITIAL_FOCUS_STATE)
   // Se leen por referencia para que el intervalo no se reinicie en cada render.
   const latest = useRef({ values, presence, tasks, settings })
-  latest.current = { values, presence, tasks, settings }
+  latest.current = { values, presence, tasks, settings, lastUpdate }
 
   useEffect(() => {
     function evaluate() {
-      const { values, presence, tasks, settings } = latest.current
+      const { values, presence, tasks, settings, lastUpdate } = latest.current
       if (settings.focusEnabled === false) return
 
-      const optimal = isOptimal(values, presence, settings.disabledSensors || [])
+      // Sin telemetría vigente no se afirma nada sobre el entorno: los valores en
+      // memoria son los últimos recibidos y sobreviven a que el dispositivo deje
+      // de publicar.
+      const optimal =
+        isTelemetryFresh(lastUpdate) && isOptimal(values, presence, settings.disabledSensors || [])
       const result = nextFocusState(stateRef.current, { now: Date.now(), optimal })
       stateRef.current = result.state
       setPhase(result.state.phase)

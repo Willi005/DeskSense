@@ -10,6 +10,22 @@ export const FOCUS_COOLDOWN_MS = 60 * 60 * 1000
 
 export const INITIAL_FOCUS_STATE = { phase: 'idle', since: null, lastNotifyTs: 0 }
 
+// Antigüedad máxima de la telemetría para darla por vigente. El dispositivo
+// publica cada 3 s, así que un minuto sin novedades ya significa que dejó de
+// hablar.
+export const MAX_TELEMETRY_AGE_MS = 60 * 1000
+
+// Los valores en memoria son los ÚLTIMOS recibidos, no los actuales: si el
+// dispositivo se queda sin WiFi, siguen ahí congelados y el entorno parece
+// perfecto indefinidamente. Sin esta comprobación, una caída del ESP32 mientras
+// alguien está en el escritorio acreditaba horas de concentración que nunca
+// ocurrieron e inflaba el reporte. Medido: una ventana falsa de 266 minutos tras
+// detener la fuente de datos.
+export function isTelemetryFresh(lastUpdate, now = Date.now()) {
+  if (!lastUpdate) return false
+  return now - lastUpdate <= MAX_TELEMETRY_AGE_MS
+}
+
 // Entorno óptimo: hay alguien presente y todos los sensores vigilados que estén
 // habilitados y tengan dato se clasifican como buenos. Se exige al menos un
 // sensor con dato para que deshabilitarlos todos no cumpla la condición en vacío.
