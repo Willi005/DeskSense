@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { createTask } from '../lib/tasks'
+import { createTask, sanitizeTaskFields } from '../lib/tasks'
 
 const TasksContext = createContext(null)
 
@@ -53,12 +53,11 @@ export function TasksProvider({ children }) {
     const store = typeof window !== 'undefined' ? window.electronAPI?.store : null
     if (!store || !loadedRef.current) return
     const { tasks, focusWindows } = stateRef.current
-    // Lectura previa para conservar cualquier clave del archivo que este
-    // contexto no gestione.
-    store
-      .read()
-      .then((current) => store.write({ ...current, version: 1, tasks, focusWindows }))
-      .catch(() => {})
+    // Un único envío, sin ida y vuelta: el proceso principal fusiona sobre lo
+    // que haya en disco. Encadenar aquí una lectura previa impedía que este
+    // volcado funcionara al cerrar la ventana, porque el renderer muere antes de
+    // que llegue la respuesta.
+    store.write({ version: 1, tasks, focusWindows }).catch(() => {})
   }, [])
 
   // Persistencia con debounce. No escribe antes de la carga inicial, para no
@@ -99,8 +98,11 @@ export function TasksProvider({ children }) {
     return task
   }, [])
 
+  // Las ediciones pasan por la misma validación que la creación: es la única
+  // forma de que la lista blanca de `createTask` sea de verdad la única puerta.
   const updateTask = useCallback((id, patch) => {
-    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, ...patch } : task)))
+    const limpio = sanitizeTaskFields(patch)
+    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, ...limpio } : task)))
   }, [])
 
   const toggleDone = useCallback((id) => {

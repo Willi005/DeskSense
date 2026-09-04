@@ -36,9 +36,20 @@ function write(data) {
 
 function registerStoreIpc(ipcMain) {
   ipcMain.handle('store:read', () => read())
+
+  // La escritura FUSIONA sobre lo que ya hay en disco, en vez de exigir que el
+  // renderer lea primero y mande el documento completo.
+  //
+  // Esa lectura previa parecía inofensiva pero rompía el volcado al cerrar la
+  // ventana: en `beforeunload` el renderer se destruye en cuanto vuelve el
+  // manejador, así que la respuesta del `read` no llegaba nunca y el `write`
+  // no se llegaba a enviar. Los cambios de los últimos instantes se perdían en
+  // silencio, que es justo lo que ese volcado existía para evitar. Con la fusión
+  // aquí, al renderer le basta un envío que sale de inmediato.
   ipcMain.handle('store:write', (_event, data) => {
     try {
-      write(data)
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+      write({ ...read(), ...data })
       return true
     } catch {
       return false
