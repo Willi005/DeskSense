@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar'
 import AlertToasts from './components/AlertToasts'
 import Dashboard from './pages/Dashboard'
 import History from './pages/History'
+import Tasks from './pages/Tasks'
+import Reports from './pages/Reports'
 import Assistant from './pages/Assistant'
 import Settings from './pages/Settings'
 import Appearance from './pages/Appearance'
@@ -38,6 +40,8 @@ export default function App() {
               />
             )}
             {page === 'history' && <History onNavigate={setPage} />}
+            {page === 'tasks' && <Tasks />}
+            {page === 'reports' && <Reports onNavigate={setPage} />}
             {page === 'assistant' && <Assistant onNavigate={setPage} />}
             {page === 'appearance' && <Appearance />}
             {page === 'settings' && <Settings onConnected={() => setPage('dashboard')} />}

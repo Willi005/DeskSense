@@ -1,21 +1,27 @@
 {
   "name": "desksense",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "DeskSense — monitoreo ambiental inteligente del escritorio (ESP32 + ThingsBoard)",
   "author": "Guillermo Salgado",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "dev": "concurrently -k -n VITE,ELECTRON -c green,blue \"npm:dev:vite\" \"npm:dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "npm run build && electron .",
     "icon": "node scripts/make-icon.mjs",
+    "simulate": "node scripts/simulator.mjs",
     "pack": "npm run icon && npm run build && electron-builder --dir",
-    "dist": "npm run icon && npm run build && electron-builder --win"
+    "dist": "npm run icon && npm run build && electron-builder",
+    "dist:win": "npm run icon && npm run build && electron-builder --win",
+    "dist:linux": "npm run icon && npm run build && electron-builder --linux"
   },
   "build": {
     "appId": "com.monitoreo.escritorio",
@@ -35,6 +41,15 @@
         "nsis"
       ],
       "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "synopsis": "Monitoreo ambiental inteligente del escritorio",
+      "artifactName": "DeskSense-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -66,6 +81,12 @@
     "sharp": "^0.35.2",
     "tailwindcss": "^3.4.15",
     "vite": "^5.4.11",
+    "vitest": "^4.1.11",
     "wait-on": "^8.0.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true,
+    "electron-winstaller@5.4.0": true
   }
 }

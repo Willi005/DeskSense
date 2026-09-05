@@ -33,6 +33,10 @@ import {
   Power,
   Eye,
   EyeOff,
+  Trash2,
+  Mic,
+  CheckSquare,
+  BarChart3,
 } from 'lucide-react'
 
 const MAP = {
@@ -70,6 +74,10 @@ const MAP = {
   power: Power,
   eye: Eye,
   'eye-off': EyeOff,
+  trash: Trash2,
+  mic: Mic,
+  'check-square': CheckSquare,
+  'bar-chart': BarChart3,
 }
 
 export default function Icon({ name, className = '', ...props }) {

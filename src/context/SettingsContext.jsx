@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useCallback } from 'react'
-import { login as tbLogin, getDeviceByName } from '../lib/thingsboard'
+import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { login as tbLogin, getDeviceByName, refreshSession } from '../lib/thingsboard'
+import { createTokenRefresher } from '../lib/auth'
 
 const STORAGE_KEY = 'monitoreo-settings'
 
@@ -8,6 +9,9 @@ const DEFAULTS = {
   tbUsername: '',
   tbPassword: '',
   jwt: '',
+  // Permite renovar la sesión sin volver a pedir credenciales. Dura 7 días,
+  // frente a los 150 minutos del JWT.
+  refreshToken: '',
   deviceName: '',
   deviceId: '',
   deviceAccessToken: '',
@@ -20,6 +24,8 @@ const DEFAULTS = {
   anthropicApiKey: import.meta.env?.VITE_ANTHROPIC_API_KEY || '',
   // Alertas automáticas cuando una métrica llega a nivel alto/crítico.
   alertsEnabled: true,
+  // Ventanas de concentración: avisa cuando se detecta entorno óptimo sostenido.
+  focusEnabled: true,
   // ---- Apariencia ----
   // Tema visual: 'dark' (por defecto) o 'light' (glass blanco).
   theme: 'dark',
@@ -43,6 +49,12 @@ const SettingsContext = createContext(null)
 export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(load)
 
+  // Espejo del estado para que `ensureFreshToken` lea siempre los valores
+  // actuales: es un callback estable que, si cerrara sobre `settings`, renovaría
+  // usando el token de un render viejo.
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+
   const persist = useCallback((next) => {
     setSettings((prev) => {
       const merged = { ...prev, ...next }
@@ -57,9 +69,17 @@ export function SettingsProvider({ children }) {
 
   // Authenticate with ThingsBoard, store JWT and resolve the device UUID.
   const connect = useCallback(async ({ tbHost, tbUsername, tbPassword, deviceName }) => {
-    const { token } = await tbLogin(tbHost, tbUsername, tbPassword)
+    const { token, refreshToken } = await tbLogin(tbHost, tbUsername, tbPassword)
     // Persist the JWT immediately so it is kept even if device lookup fails.
-    persist({ tbHost, tbUsername, tbPassword, deviceName, jwt: token, deviceId: '' })
+    persist({
+      tbHost,
+      tbUsername,
+      tbPassword,
+      deviceName,
+      jwt: token,
+      refreshToken: refreshToken || '',
+      deviceId: '',
+    })
     // Resolve the device; capture (not throw) the reason so the UI can show the
     // JWT and explain the device problem at the same time.
     try {
@@ -71,10 +91,25 @@ export function SettingsProvider({ children }) {
     }
   }, [persist])
 
+  // Renovación de la sesión en un único lugar. La máquina de decisión vive en
+  // src/lib/auth.js con las dependencias inyectadas, para poder probarla sin
+  // React ni red: ahí están el orden de los tres niveles, el freno anti-bucle y
+  // el reparto de una sola renovación entre llamadas simultáneas.
+  const ensureFreshTokenRef = useRef(null)
+  if (!ensureFreshTokenRef.current) {
+    ensureFreshTokenRef.current = createTokenRefresher({
+      getSettings: () => settingsRef.current,
+      persist: (cambios) => persist(cambios),
+      refreshSession,
+      login: tbLogin,
+    })
+  }
+  const ensureFreshToken = useCallback((...args) => ensureFreshTokenRef.current(...args), [])
+
   const isConfigured = Boolean(settings.jwt && settings.deviceId)
 
   return (
-    <SettingsContext.Provider value={{ settings, update: persist, connect, isConfigured }}>
+    <SettingsContext.Provider value={{ settings, update: persist, connect, ensureFreshToken, isConfigured }}>
       {children}
     </SettingsContext.Provider>
   )

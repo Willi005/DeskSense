@@ -201,6 +201,11 @@ export const TELEMETRY_KEYS = [
   'pm10',
 ]
 
+// Métricas con niveles de calidad relevantes para alertas, índice de entorno y
+// detección de ventanas de concentración (excluye distancia y presencia, que no
+// tienen un nivel "bueno" o "malo").
+export const WATCH_KEYS = ['temperatura', 'humedad', 'luz', 'ruido', 'pm25', 'pm1', 'pm10']
+
 export function classify(key, value) {
   if (value == null || Number.isNaN(value)) return LEVELS.unknown
   const sensor = SENSORS[key]

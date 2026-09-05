@@ -33,6 +33,18 @@ export async function login(host, username, password) {
   return data // { token, refreshToken }
 }
 
+// POST /api/auth/token -> { token, refreshToken }
+// Renueva la sesión sin volver a pedir usuario y contraseña. El refresh token
+// dura mucho más que el JWT (7 días frente a 150 minutos), así que basta con
+// esto para que la aplicación no exija iniciar sesión cada dos horas y media.
+export async function refreshSession(host, refreshToken) {
+  const data = await tbFetch(host, '/api/auth/token', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  })
+  return data // { token, refreshToken }
+}
+
 // Resolve a device UUID from its name (needs JWT with tenant rights).
 // GET /api/tenant/devices?deviceName=...
 // ThingsBoard's NULL_UUID, used when a user has no assigned customer.
