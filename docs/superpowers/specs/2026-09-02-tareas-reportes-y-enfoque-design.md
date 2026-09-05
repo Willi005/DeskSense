@@ -302,6 +302,20 @@ como "sin datos" en lugar de como cero.
 
 **Ventanas de concentración:** cantidad y minutos totales del período.
 
+**Aprovechamiento del enfoque:** de las ventanas que llegaron a sugerir una tarea profunda,
+cuántas de esas tareas acabaron completándose. Es lo que cierra el ciclo que declara la
+sección 2: sin este cruce, el reporte contaba ventanas y tareas por separado y la "idea
+unificadora" existía solo en este documento.
+
+Para que funcione, cada ventana guarda el `suggestedTaskId` que le correspondía al abrirse
+—se calcula antes de la transición de estado, de modo que también las ventanas que no
+notifican por estar en enfriamiento quedan registradas con su tarea—. El cruce se hace
+contra la lista **completa** de tareas, no contra las del período: que una tarea venza otro
+día no cambia si se completó.
+
+La frase se limita a lo que los datos sostienen —que la tarea sugerida acabó completándose—
+sin afirmar que la ventana fuera la causa. Misma disciplina que el patrón observado.
+
 ### 8.3 Patrón observado
 
 Para cada tarea completada se toma su `completedAt` y se busca el cubo de telemetría más

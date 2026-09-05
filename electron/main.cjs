@@ -81,6 +81,9 @@ ipcMain.on('notify', (e, payload) => {
       if (win.isMinimized()) win.restore()
       if (!win.isVisible()) win.show()
       win.focus()
+      // Una notificación que nombra una tarea debe dejar a la persona frente a
+      // ella. Sin esto, traía la ventana al frente y la obligaba a buscarla.
+      if (payload && payload.route) win.webContents.send('navigate', payload.route)
     })
     n.show()
   } catch {
