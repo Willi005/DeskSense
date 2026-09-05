@@ -7,8 +7,10 @@ import RecommendationsCard from '../components/RecommendationsCard'
 import NotConfigured from '../components/NotConfigured'
 import { useTelemetry } from '../context/TelemetryContext'
 import { useSettings } from '../context/SettingsContext'
+import { useFocus } from '../context/FocusContext'
 
 export default function Dashboard({ onOpenAssistant, onNavigate }) {
+  const { phase: focusPhase, suggestedTask } = useFocus()
   const { values, history, presence, isConfigured, lastUpdate } = useTelemetry()
   const { settings } = useSettings()
   const off = (key) => (settings.disabledSensors || []).includes(key)
@@ -42,6 +44,28 @@ export default function Dashboard({ onOpenAssistant, onNavigate }) {
             : 'Esperando primera lectura…'
         }
       />
+
+      {/* Ventana de concentración en curso. La notificación es efímera: sin este
+          aviso permanente, quien no estuviera mirando la pantalla en ese momento
+          no llegaba a saber nunca que su entorno estaba acompañando. */}
+      {focusPhase === 'active' && !paused && (
+        <GlassCard className="mb-4 flex items-center gap-3 p-3.5 ring-1 ring-status-good/30">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-status-good/15">
+            <Icon name="check" className="h-[18px] w-[18px] text-status-good" />
+          </span>
+          <p className="text-sm leading-relaxed text-white/70">
+            <span className="font-medium text-status-good">Ventana de concentración.</span>{' '}
+            {suggestedTask ? (
+              <>
+                Tu entorno acompaña ahora mismo. Buen momento para{' '}
+                <span className="font-medium text-white/90">«{suggestedTask.title}»</span>.
+              </>
+            ) : (
+              'Tu entorno acompaña ahora mismo: buen momento para una tarea que exija concentración.'
+            )}
+          </p>
+        </GlassCard>
+      )}
 
       {paused && (
         <GlassCard className="mb-4 flex items-center gap-3 p-3.5">
