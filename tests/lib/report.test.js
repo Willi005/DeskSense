@@ -190,6 +190,45 @@ describe('cruce entre ventanas de concentración y tareas', () => {
     ]
     const r = buildReport({ tasks, series: {}, focusWindows, range, disabled: [] })
     expect(r.focus.headline).toMatch(/2 ventanas/)
+    // Dos ventanas sugirieron LA MISMA tarea: se completó una, no dos.
+    expect(r.focus.completed).toBe(1)
+  })
+
+  it('no cuenta dos veces la misma tarea sugerida en varias ventanas', () => {
+    // `nextDeepTask` devuelve la misma tarea tope hasta que se completa, así que
+    // varias ventanas apuntando a una sola tarea es el caso normal, no un borde.
+    const tasks = [{ id: 'a', title: 'X', dueDate: '2026-09-02', status: 'done', completedAt: 5000 }]
+    const focusWindows = [1, 2, 3].map((n) => ({
+      id: `w${n}`, startTs: n * 1000, endTs: n * 1000 + 500, durationMinutes: 10, suggestedTaskId: 'a',
+    }))
+    const r = buildReport({ tasks, series: {}, focusWindows, range, disabled: [] })
+    expect(r.focus.completed).toBe(1)
+    expect(r.focus.headline).not.toMatch(/3 de esas/)
+  })
+
+  it('distingue "no hay dato" de "no había ninguna tarea que sugerir"', () => {
+    // Las ventanas guardadas antes de este cambio no traen el campo. Afirmar que
+    // no había tarea pendiente es inventar un motivo que el dato no sostiene.
+    const tasks = [{ id: 'a', title: 'Profunda pendiente', dueDate: '2026-09-02', status: 'pending', completedAt: null }]
+    const antiguas = [{ id: 'w', startTs: 1000, endTs: 2000, durationMinutes: 10 }]
+    const r = buildReport({ tasks, allTasks: tasks, series: {}, focusWindows: antiguas, range, disabled: [] })
+    expect(r.focus.headline).not.toMatch(/no había ninguna tarea profunda/i)
+    expect(r.focus.headline).toMatch(/sin registro de la tarea sugerida/i)
+  })
+
+  it('concuerda el número en la frase', () => {
+    const dos = [
+      { id: 'a', title: 'A', dueDate: '2026-09-02', status: 'done', completedAt: 5000 },
+      { id: 'b', title: 'B', dueDate: '2026-09-02', status: 'done', completedAt: 6000 },
+    ]
+    const w = (n, t) => ({ id: `w${n}`, startTs: n * 1000, endTs: n * 1000 + 1, durationMinutes: 5, suggestedTaskId: t })
+    expect(
+      buildReport({ tasks: dos, series: {}, focusWindows: [w(1, 'a'), w(2, 'b')], range, disabled: [] }).focus.headline
+    ).toMatch(/acabaron completándose/)
+    const cero = [{ id: 'a', title: 'A', dueDate: '2026-09-02', status: 'pending', completedAt: null }]
+    expect(
+      buildReport({ tasks: cero, series: {}, focusWindows: [w(1, 'a')], range, disabled: [] }).focus.headline
+    ).toMatch(/ninguna de esas tareas/i)
   })
 
   it('tolera ventanas antiguas sin el campo, guardadas antes de este cambio', () => {
