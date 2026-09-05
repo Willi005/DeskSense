@@ -137,7 +137,41 @@ function buildPattern(completed, series, disabled) {
   }
 }
 
-export function buildReport({ tasks, series, focusWindows = [], range, disabled = [] }) {
+// Cruce entre las ventanas de concentración y las tareas que sugirieron.
+//
+// Es lo que cierra el ciclo del diseño: el entorno detecta el momento, la tarea
+// dice qué hacer con él, y esto mide si sirvió. Sin este cruce el reporte solo
+// contaba ventanas y tareas por separado, sin relacionarlas nunca.
+//
+// La frase se queda en lo que los datos sostienen —que la tarea sugerida acabó
+// completándose— sin afirmar que la ventana fuera la causa. Misma disciplina que
+// el "patrón observado".
+function buildFocusSummary(windows, tasks) {
+  const count = windows.length
+  const totalMinutes = windows.reduce((sum, w) => sum + (w.durationMinutes || 0), 0)
+
+  // Las ventanas guardadas antes de que existiera este campo no lo traen.
+  const conSugerencia = windows.filter((w) => w.suggestedTaskId)
+  const hechas = new Set(tasks.filter((t) => t.status === 'done').map((t) => t.id))
+  const completed = conSugerencia.filter((w) => hechas.has(w.suggestedTaskId)).length
+
+  let headline
+  if (!count) {
+    headline = 'Sin ventanas de concentración en este período.'
+  } else if (!conSugerencia.length) {
+    headline = `${count} ${count === 1 ? 'ventana' : 'ventanas'} de concentración, pero no había ninguna tarea profunda pendiente que sugerir.`
+  } else {
+    const v = `${conSugerencia.length} ${conSugerencia.length === 1 ? 'ventana' : 'ventanas'}`
+    headline = `En ${v} se te sugirió una tarea profunda; ${completed} de esas tareas acabó completándose.`
+  }
+
+  return { count, totalMinutes, suggested: conSugerencia.length, completed, headline }
+}
+
+// `tasks` son las del período (miden el cumplimiento); `allTasks` es la lista
+// completa, necesaria para el cruce con las ventanas: que una tarea venza otro
+// día no cambia si se completó.
+export function buildReport({ tasks, allTasks, series, focusWindows = [], range, disabled = [] }) {
   const completed = tasks.filter((task) => task.status === 'done' && task.completedAt != null)
   const average = averageSeries(series, disabled)
   const windowsInRange = focusWindows.filter(
@@ -155,9 +189,6 @@ export function buildReport({ tasks, series, focusWindows = [], range, disabled 
       average,
     },
     pattern: buildPattern(completed, series, disabled),
-    focus: {
-      count: windowsInRange.length,
-      totalMinutes: windowsInRange.reduce((sum, w) => sum + (w.durationMinutes || 0), 0),
-    },
+    focus: buildFocusSummary(windowsInRange, allTasks || tasks),
   }
 }

@@ -16,6 +16,9 @@ export default function App() {
   const [page, setPage] = useState('dashboard')
   const { settings } = useSettings()
 
+  // Al hacer clic en una notificación que apunta a una página, se navega a ella.
+  useEffect(() => window.electronAPI?.onNavigate?.((route) => setPage(route)), [])
+
   // Aplica el tema seleccionado al documento (dirige los overrides de CSS).
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme === 'light' ? 'light' : 'dark'
