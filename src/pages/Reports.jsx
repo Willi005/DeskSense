@@ -75,6 +75,7 @@ export default function Reports({ onNavigate }) {
     () =>
       buildReport({
         tasks: tasksInRange(tasks, range),
+        allTasks: tasks,
         series,
         focusWindows,
         range,

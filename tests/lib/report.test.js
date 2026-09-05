@@ -134,6 +134,78 @@ describe('levelAt con distancia temporal', () => {
   })
 })
 
+describe('cruce entre ventanas de concentración y tareas', () => {
+  const range = { start: 0, end: 10_000 }
+
+  it('cuenta cuántas ventanas sugirieron una tarea que acabó completándose', () => {
+    const tasks = [
+      { id: 'a', title: 'Profunda hecha', dueDate: '2026-09-02', status: 'done', completedAt: 5000 },
+      { id: 'b', title: 'Profunda pendiente', dueDate: '2026-09-02', status: 'pending', completedAt: null },
+    ]
+    const focusWindows = [
+      { id: 'w1', startTs: 1000, endTs: 2000, durationMinutes: 10, suggestedTaskId: 'a' },
+      { id: 'w2', startTs: 3000, endTs: 4000, durationMinutes: 10, suggestedTaskId: 'b' },
+      { id: 'w3', startTs: 5000, endTs: 6000, durationMinutes: 10, suggestedTaskId: null },
+    ]
+    const r = buildReport({ tasks, series: {}, focusWindows, range, disabled: [] })
+    expect(r.focus.count).toBe(3)
+    expect(r.focus.suggested).toBe(2)
+    expect(r.focus.completed).toBe(1)
+  })
+
+  it('reconoce la tarea sugerida aunque venza fuera del período', () => {
+    // La ventana ocurrió en este período; que la tarea venza otro día no cambia
+    // si se completó. Filtrar por vencimiento hacía que estas nunca contaran.
+    const delPeriodo = []
+    const todas = [
+      { id: 'a', title: 'Vence la semana próxima', dueDate: '2026-12-31', status: 'done', completedAt: 5000 },
+    ]
+    const focusWindows = [
+      { id: 'w1', startTs: 1000, endTs: 2000, durationMinutes: 10, suggestedTaskId: 'a' },
+    ]
+    const r = buildReport({
+      tasks: delPeriodo,
+      allTasks: todas,
+      series: {},
+      focusWindows,
+      range,
+      disabled: [],
+    })
+    expect(r.focus.suggested).toBe(1)
+    expect(r.focus.completed).toBe(1)
+  })
+
+  it('no afirma nada cuando ninguna ventana llegó a sugerir una tarea', () => {
+    const focusWindows = [{ id: 'w', startTs: 1000, endTs: 2000, durationMinutes: 10, suggestedTaskId: null }]
+    const r = buildReport({ tasks: [], series: {}, focusWindows, range, disabled: [] })
+    expect(r.focus.suggested).toBe(0)
+    expect(r.focus.headline).toMatch(/no hab(í|i)a ninguna tarea profunda/i)
+  })
+
+  it('resume el aprovechamiento en una frase legible', () => {
+    const tasks = [{ id: 'a', title: 'X', dueDate: '2026-09-02', status: 'done', completedAt: 5000 }]
+    const focusWindows = [
+      { id: 'w1', startTs: 1000, endTs: 2000, durationMinutes: 10, suggestedTaskId: 'a' },
+      { id: 'w2', startTs: 3000, endTs: 4000, durationMinutes: 10, suggestedTaskId: 'a' },
+    ]
+    const r = buildReport({ tasks, series: {}, focusWindows, range, disabled: [] })
+    expect(r.focus.headline).toMatch(/2 ventanas/)
+  })
+
+  it('tolera ventanas antiguas sin el campo, guardadas antes de este cambio', () => {
+    const focusWindows = [{ id: 'w', startTs: 1000, endTs: 2000, durationMinutes: 10 }]
+    const r = buildReport({ tasks: [], series: {}, focusWindows, range, disabled: [] })
+    expect(r.focus.count).toBe(1)
+    expect(r.focus.suggested).toBe(0)
+  })
+
+  it('sin ventanas no inventa una frase', () => {
+    const r = buildReport({ tasks: [], series: {}, focusWindows: [], range, disabled: [] })
+    expect(r.focus.count).toBe(0)
+    expect(r.focus.headline).toMatch(/sin ventanas/i)
+  })
+})
+
 describe('buildReport', () => {
   const range = { start: 0, end: 10000 }
 
@@ -150,7 +222,8 @@ describe('buildReport', () => {
       disabled: [],
     })
     expect(report.completion.percent).toBe(50)
-    expect(report.focus).toEqual({ count: 1, totalMinutes: 30 })
+    expect(report.focus.count).toBe(1)
+    expect(report.focus.totalMinutes).toBe(30)
     expect(report.environment.index).toBeGreaterThan(0)
   })
 

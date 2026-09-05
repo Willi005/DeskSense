@@ -48,6 +48,15 @@ export default function ReportSummary({ report }) {
       </div>
 
       <div className="glass rounded-2xl px-5 py-4">
+        <p className="text-xs uppercase tracking-wider text-white/40">Aprovechamiento del enfoque</p>
+        <p className="mt-2 text-sm text-white/85">{focus.headline}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-white/35">
+          Relaciona cada ventana de concentración con la tarea profunda que se sugirió en
+          ella. Que la tarea acabara completándose no implica que la ventana fuera la causa.
+        </p>
+      </div>
+
+      <div className="glass rounded-2xl px-5 py-4">
         <p className="text-xs uppercase tracking-wider text-white/40">Patrón observado</p>
         <p className="mt-2 text-sm text-white/85">{pattern.headline}</p>
         <p className="mt-2 text-[11px] leading-relaxed text-white/35">
