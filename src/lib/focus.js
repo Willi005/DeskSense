@@ -8,7 +8,15 @@ import { classify, WATCH_KEYS } from './sensors'
 export const FOCUS_HOLD_MS = 10 * 60 * 1000
 export const FOCUS_COOLDOWN_MS = 60 * 60 * 1000
 
-export const INITIAL_FOCUS_STATE = { phase: 'idle', since: null, lastNotifyTs: 0 }
+export const INITIAL_FOCUS_STATE = {
+  phase: 'idle',
+  since: null,
+  lastNotifyTs: 0,
+  // Qué tarea se sugirió al abrir esta ventana. Viaja con la ventana hasta que
+  // se cierra, para que el reporte pueda cruzar las ventanas con las tareas en
+  // vez de limitarse a contarlas por separado.
+  suggestedTaskId: null,
+}
 
 // Antigüedad máxima de la telemetría para darla por vigente. El dispositivo
 // publica cada 3 s, así que un minuto sin novedades ya significa que dejó de
@@ -45,7 +53,7 @@ export function isOptimal(values, presence, disabled = []) {
 
 // Transición pura. Devuelve el estado siguiente y los efectos que el contexto
 // debe ejecutar: notificar y registrar la ventana que acaba de cerrarse.
-export function nextFocusState(state, { now, optimal }) {
+export function nextFocusState(state, { now, optimal, suggestedTaskId = null }) {
   const none = { state, notify: false, closedWindow: null }
 
   if (optimal) {
@@ -58,7 +66,12 @@ export function nextFocusState(state, { now, optimal }) {
       // registrada para el reporte aunque no se avise a la persona.
       const notify = state.lastNotifyTs === 0 || now - state.lastNotifyTs >= FOCUS_COOLDOWN_MS
       return {
-        state: { ...state, phase: 'active', lastNotifyTs: notify ? now : state.lastNotifyTs },
+        state: {
+          ...state,
+          phase: 'active',
+          lastNotifyTs: notify ? now : state.lastNotifyTs,
+          suggestedTaskId,
+        },
         notify,
         closedWindow: null,
       }
@@ -68,12 +81,15 @@ export function nextFocusState(state, { now, optimal }) {
 
   if (state.phase === 'active') {
     return {
-      state: { ...state, phase: 'idle', since: null },
+      // La sugerencia se olvida al volver a reposo: pertenece a la ventana que
+      // termina, no a la siguiente.
+      state: { ...state, phase: 'idle', since: null, suggestedTaskId: null },
       notify: false,
       closedWindow: {
         startTs: state.since,
         endTs: now,
         durationMinutes: Math.round((now - state.since) / 60000),
+        suggestedTaskId: state.suggestedTaskId ?? null,
       },
     }
   }

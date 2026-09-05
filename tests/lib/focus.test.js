@@ -79,7 +79,12 @@ describe('nextFocusState', () => {
     const now = 30 * 60 * 1000
     const { state, closedWindow } = nextFocusState(active, { now, optimal: false })
     expect(state.phase).toBe('idle')
-    expect(closedWindow).toEqual({ startTs: 0, endTs: now, durationMinutes: 30 })
+    expect(closedWindow).toEqual({
+      startTs: 0,
+      endTs: now,
+      durationMinutes: 30,
+      suggestedTaskId: null,
+    })
   })
 
   it('no registra nada si la condición se rompe mientras acumulaba', () => {
@@ -115,5 +120,43 @@ describe('isTelemetryFresh', () => {
     expect(isTelemetryFresh(0, 1_000_000)).toBe(false)
     expect(isTelemetryFresh(null, 1_000_000)).toBe(false)
     expect(isTelemetryFresh(undefined, 1_000_000)).toBe(false)
+  })
+})
+
+describe('la ventana recuerda qué tarea sugirió', () => {
+  it('guarda la tarea sugerida al activarse', () => {
+    const building = { phase: 'building', since: 0, lastNotifyTs: 0 }
+    const { state } = nextFocusState(building, {
+      now: FOCUS_HOLD_MS,
+      optimal: true,
+      suggestedTaskId: 't-42',
+    })
+    expect(state.phase).toBe('active')
+    expect(state.suggestedTaskId).toBe('t-42')
+  })
+
+  it('la devuelve al cerrar la ventana, para poder cruzarla con las tareas', () => {
+    const active = { phase: 'active', since: 0, lastNotifyTs: 0, suggestedTaskId: 't-42' }
+    const { closedWindow } = nextFocusState(active, { now: 60_000, optimal: false })
+    expect(closedWindow.suggestedTaskId).toBe('t-42')
+  })
+
+  it('acepta que no hubiera ninguna tarea profunda pendiente', () => {
+    const building = { phase: 'building', since: 0, lastNotifyTs: 0 }
+    const { state } = nextFocusState(building, { now: FOCUS_HOLD_MS, optimal: true })
+    expect(state.suggestedTaskId).toBeNull()
+
+    const { closedWindow } = nextFocusState(
+      { ...state, phase: 'active' },
+      { now: FOCUS_HOLD_MS + 60_000, optimal: false }
+    )
+    expect(closedWindow.suggestedTaskId).toBeNull()
+  })
+
+  it('olvida la sugerencia al volver a reposo, para no arrastrarla a la ventana siguiente', () => {
+    const active = { phase: 'active', since: 0, lastNotifyTs: 0, suggestedTaskId: 't-42' }
+    const { state } = nextFocusState(active, { now: 60_000, optimal: false })
+    expect(state.phase).toBe('idle')
+    expect(state.suggestedTaskId).toBeNull()
   })
 })

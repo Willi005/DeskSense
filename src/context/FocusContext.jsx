@@ -30,6 +30,9 @@ export function FocusProvider({ children }) {
   const { settings } = useSettings()
   const { tasks, addFocusWindow } = useTasks()
   const [phase, setPhase] = useState('idle')
+  // Tarea que se está sugiriendo mientras la ventana está activa, para que la
+  // interfaz pueda mostrarla en vez de depender de una notificación efímera.
+  const [suggestedTask, setSuggestedTask] = useState(null)
 
   const stateRef = useRef(INITIAL_FOCUS_STATE)
   // Se leen por referencia para que el intervalo no se reinicie en cada render.
@@ -46,17 +49,27 @@ export function FocusProvider({ children }) {
       // de publicar.
       const optimal =
         isTelemetryFresh(lastArrival) && isOptimal(values, presence, settings.disabledSensors || [])
-      const result = nextFocusState(stateRef.current, { now: Date.now(), optimal })
+
+      // La sugerencia se calcula ANTES de la transición: la ventana se activa
+      // aunque el enfriamiento impida notificar, y aun así debe quedar
+      // registrada con la tarea que le correspondía. Calcularla solo dentro del
+      // `if (notify)` dejaba sin sugerencia justo a esas ventanas.
+      const suggestion = nextDeepTask(tasks)
+      const result = nextFocusState(stateRef.current, {
+        now: Date.now(),
+        optimal,
+        suggestedTaskId: suggestion?.id ?? null,
+      })
       stateRef.current = result.state
       setPhase(result.state.phase)
+      setSuggestedTask(result.state.phase === 'active' ? suggestion : null)
 
       if (result.notify) {
-        const suggestion = nextDeepTask(tasks)
         const body = suggestion
           ? `Tu entorno lleva ${holdLabel} en condiciones óptimas. Buen momento para: «${suggestion.title}».`
           : `Tu entorno lleva ${holdLabel} en condiciones óptimas. Buen momento para una tarea que exija concentración.`
         try {
-          window.electronAPI?.notify?.('Ventana de concentración detectada', body)
+          window.electronAPI?.notify?.('Ventana de concentración detectada', body, 'tasks')
         } catch {
           /* notificaciones no disponibles */
         }
@@ -73,8 +86,8 @@ export function FocusProvider({ children }) {
   }, [addFocusWindow])
 
   const value = useMemo(
-    () => ({ phase, currentWindowStart: stateRef.current.since }),
-    [phase]
+    () => ({ phase, suggestedTask, currentWindowStart: stateRef.current.since }),
+    [phase, suggestedTask]
   )
 
   return <FocusContext.Provider value={value}>{children}</FocusContext.Provider>
