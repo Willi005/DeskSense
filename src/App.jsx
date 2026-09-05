@@ -12,12 +12,23 @@ import Settings from './pages/Settings'
 import Appearance from './pages/Appearance'
 import { useSettings } from './context/SettingsContext'
 
+// Páginas que el render condicional sabe dibujar.
+const PAGES = ['dashboard', 'history', 'tasks', 'reports', 'assistant', 'appearance', 'settings']
+
 export default function App() {
   const [page, setPage] = useState('dashboard')
   const { settings } = useSettings()
 
   // Al hacer clic en una notificación que apunta a una página, se navega a ella.
-  useEffect(() => window.electronAPI?.onNavigate?.((route) => setPage(route)), [])
+  // La ruta se valida: una desconocida dejaría el área de contenido en blanco,
+  // porque el render es condicional y no tiene caso por defecto.
+  useEffect(
+    () =>
+      window.electronAPI?.onNavigate?.((route) => {
+        if (PAGES.includes(route)) setPage(route)
+      }),
+    []
+  )
 
   // Aplica el tema seleccionado al documento (dirige los overrides de CSS).
   useEffect(() => {

@@ -150,27 +150,47 @@ function buildFocusSummary(windows, tasks) {
   const count = windows.length
   const totalMinutes = windows.reduce((sum, w) => sum + (w.durationMinutes || 0), 0)
 
-  // Las ventanas guardadas antes de que existiera este campo no lo traen.
-  const conSugerencia = windows.filter((w) => w.suggestedTaskId)
+  // Tres situaciones distintas que no deben confundirse:
+  //   - la ventana registró una tarea            → se puede medir
+  //   - la ventana registró que no había ninguna → dato real, `suggestedTaskId: null`
+  //   - la ventana es anterior a esta versión    → no trae el campo, no hay dato
+  const conRegistro = windows.filter((w) => 'suggestedTaskId' in w)
+  const sinRegistro = count - conRegistro.length
+  const conSugerencia = conRegistro.filter((w) => w.suggestedTaskId)
+
+  // Se cuentan TAREAS distintas, no ventanas. `nextDeepTask` devuelve la misma
+  // tarea tope hasta que se completa, así que varias ventanas apuntando a una
+  // sola tarea es lo habitual: contar ventanas afirmaba que se completaron tres
+  // tareas cuando solo se había completado una.
+  const sugeridas = new Set(conSugerencia.map((w) => w.suggestedTaskId))
   const hechas = new Set(tasks.filter((t) => t.status === 'done').map((t) => t.id))
-  const completed = conSugerencia.filter((w) => hechas.has(w.suggestedTaskId)).length
+  const completed = [...sugeridas].filter((id) => hechas.has(id)).length
+
+  const plural = (n, sing, pl) => `${n} ${n === 1 ? sing : pl}`
 
   let headline
   if (!count) {
     headline = 'Sin ventanas de concentración en este período.'
-  } else if (!conSugerencia.length) {
-    headline = `${count} ${count === 1 ? 'ventana' : 'ventanas'} de concentración, pero no había ninguna tarea profunda pendiente que sugerir.`
+  } else if (!conRegistro.length) {
+    headline = `${plural(count, 'ventana', 'ventanas')} de concentración, sin registro de la tarea sugerida por ser anteriores a esta versión.`
+  } else if (!sugeridas.size) {
+    headline = `${plural(count, 'ventana', 'ventanas')} de concentración, pero no había ninguna tarea profunda pendiente que sugerir.`
   } else {
-    const v = `${conSugerencia.length} ${conSugerencia.length === 1 ? 'ventana' : 'ventanas'}`
-    headline = `En ${v} se te sugirió una tarea profunda; ${completed} de esas tareas acabó completándose.`
+    const cuantas =
+      completed === 0
+        ? 'ninguna de esas tareas acabó completándose'
+        : completed === 1
+        ? '1 de esas tareas acabó completándose'
+        : `${completed} de esas tareas acabaron completándose`
+    headline = `En ${plural(conSugerencia.length, 'ventana', 'ventanas')} se te sugirió una tarea profunda; ${cuantas}.`
+    if (sinRegistro) {
+      headline += ` (${plural(sinRegistro, 'ventana', 'ventanas')} sin registro, por ser anteriores a esta versión.)`
+    }
   }
 
   return { count, totalMinutes, suggested: conSugerencia.length, completed, headline }
 }
 
-// `tasks` son las del período (miden el cumplimiento); `allTasks` es la lista
-// completa, necesaria para el cruce con las ventanas: que una tarea venza otro
-// día no cambia si se completó.
 export function buildReport({ tasks, allTasks, series, focusWindows = [], range, disabled = [] }) {
   const completed = tasks.filter((task) => task.status === 'done' && task.completedAt != null)
   const average = averageSeries(series, disabled)

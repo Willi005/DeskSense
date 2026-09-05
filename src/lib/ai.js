@@ -298,6 +298,7 @@ export async function summarizeReport({ provider, apiKey, model, report }) {
       .map(([key, value]) => `${key} ${value}`)
       .join(', ')}.`,
     `Ventanas de concentración: ${report.focus.count} (${report.focus.totalMinutes} min).`,
+    `Aprovechamiento del enfoque: ${report.focus.headline}`,
     `Patrón observado: ${report.pattern.headline}`,
   ].join('\n')
 
