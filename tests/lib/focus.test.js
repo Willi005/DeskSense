@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  resetFocusState,
   isTelemetryFresh,
   MAX_TELEMETRY_AGE_MS,
   isOptimal,
@@ -156,6 +157,37 @@ describe('la ventana recuerda qué tarea sugirió', () => {
   it('olvida la sugerencia al volver a reposo, para no arrastrarla a la ventana siguiente', () => {
     const active = { phase: 'active', since: 0, lastNotifyTs: 0, suggestedTaskId: 't-42' }
     const { state } = nextFocusState(active, { now: 60_000, optimal: false })
+    expect(state.phase).toBe('idle')
+    expect(state.suggestedTaskId).toBeNull()
+  })
+})
+
+describe('apagar la detección no debe fabricar una ventana', () => {
+  it('resetFocusState devuelve el estado a reposo sin registrar nada', () => {
+    const active = { phase: 'active', since: 0, lastNotifyTs: 500, suggestedTaskId: 't-1' }
+    const r = resetFocusState(active)
+    expect(r.state.phase).toBe('idle')
+    expect(r.state.since).toBeNull()
+    expect(r.state.suggestedTaskId).toBeNull()
+    expect(r.closedWindow).toBeNull()
+    expect(r.notify).toBe(false)
+  })
+
+  it('conserva el enfriamiento, para no reavisar en cuanto se vuelva a encender', () => {
+    const active = { phase: 'active', since: 0, lastNotifyTs: 12345, suggestedTaskId: 't-1' }
+    expect(resetFocusState(active).state.lastNotifyTs).toBe(12345)
+  })
+
+  it('desde reposo no cambia nada', () => {
+    const r = resetFocusState(INITIAL_FOCUS_STATE)
+    expect(r.state).toEqual(INITIAL_FOCUS_STATE)
+  })
+})
+
+describe('la transición building → idle limpia la sugerencia', () => {
+  it('no deja una sugerencia que pueda arrastrarse a la ventana siguiente', () => {
+    const building = { phase: 'building', since: 0, lastNotifyTs: 0, suggestedTaskId: 't-viejo' }
+    const { state } = nextFocusState(building, { now: 1000, optimal: false })
     expect(state.phase).toBe('idle')
     expect(state.suggestedTaskId).toBeNull()
   })

@@ -6,6 +6,7 @@ import {
   isOptimal,
   isTelemetryFresh,
   nextFocusState,
+  resetFocusState,
   INITIAL_FOCUS_STATE,
   FOCUS_HOLD_MS,
 } from '../lib/focus'
@@ -42,7 +43,19 @@ export function FocusProvider({ children }) {
   useEffect(() => {
     function evaluate() {
       const { values, presence, tasks, settings, lastArrival } = latest.current
-      if (settings.focusEnabled === false) return
+
+      // Con la detección apagada se vuelve a reposo de forma explícita. Salir
+      // antes de actualizar el estado lo dejaba congelado en `active`: el aviso
+      // del panel se quedaba pegado, y al reactivar se registraba una ventana
+      // que abarcaba todo el tiempo apagado.
+      if (settings.focusEnabled === false) {
+        if (stateRef.current.phase !== 'idle') {
+          stateRef.current = resetFocusState(stateRef.current).state
+          setPhase('idle')
+          setSuggestedTask(null)
+        }
+        return
+      }
 
       // Sin telemetría vigente no se afirma nada sobre el entorno: los valores en
       // memoria son los últimos recibidos y sobreviven a que el dispositivo deje
@@ -62,7 +75,15 @@ export function FocusProvider({ children }) {
       })
       stateRef.current = result.state
       setPhase(result.state.phase)
-      setSuggestedTask(result.state.phase === 'active' ? suggestion : null)
+      // Se muestra la tarea REGISTRADA en la ventana, no la que sería la mejor
+      // ahora: si divergieran, el panel nombraría una tarea distinta de la que
+      // el reporte va a acreditar.
+      const registrada = result.state.suggestedTaskId
+      setSuggestedTask(
+        result.state.phase === 'active' && registrada
+          ? tasks.find((t) => t.id === registrada) || null
+          : null
+      )
 
       if (result.notify) {
         const body = suggestion
@@ -86,7 +107,7 @@ export function FocusProvider({ children }) {
   }, [addFocusWindow])
 
   const value = useMemo(
-    () => ({ phase, suggestedTask, currentWindowStart: stateRef.current.since }),
+    () => ({ phase, suggestedTask }),
     [phase, suggestedTask]
   )
 
