@@ -53,6 +53,23 @@ export function isOptimal(values, presence, disabled = []) {
 
 // Transición pura. Devuelve el estado siguiente y los efectos que el contexto
 // debe ejecutar: notificar y registrar la ventana que acaba de cerrarse.
+// Vuelve a reposo sin registrar nada. Se usa al desactivar la detección: no
+// evaluar y salir antes dejaba el estado CONGELADO en `active`, con dos efectos
+// que solo se veían más tarde — el aviso del panel quedaba pegado
+// indefinidamente, y al reactivar, el primer instante no óptimo registraba una
+// ventana que abarcaba todo el tiempo apagado, con su tarea rancia. Un dato
+// inventado es peor que un dato ausente.
+//
+// El enfriamiento (`lastNotifyTs`) se conserva a propósito: apagar y encender no
+// debería servir para saltarse el intervalo entre avisos.
+export function resetFocusState(state) {
+  return {
+    state: { ...state, phase: 'idle', since: null, suggestedTaskId: null },
+    notify: false,
+    closedWindow: null,
+  }
+}
+
 export function nextFocusState(state, { now, optimal, suggestedTaskId = null }) {
   const none = { state, notify: false, closedWindow: null }
 
@@ -95,7 +112,11 @@ export function nextFocusState(state, { now, optimal, suggestedTaskId = null }) 
   }
 
   if (state.phase === 'building') {
-    return { state: { ...state, phase: 'idle', since: null }, notify: false, closedWindow: null }
+    return {
+      state: { ...state, phase: 'idle', since: null, suggestedTaskId: null },
+      notify: false,
+      closedWindow: null,
+    }
   }
 
   return none
