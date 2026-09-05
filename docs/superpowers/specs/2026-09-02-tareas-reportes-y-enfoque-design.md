@@ -378,7 +378,11 @@ condición se cumpla de forma vacía.
 ### 9.3 La notificación
 
 Usa la misma vía IPC que ya emplean las alertas (`window.electronAPI.notify`), que dispara
-la notificación desde el proceso principal.
+la notificación desde el proceso principal, con un tercer argumento opcional `route`. Al
+hacer clic, el proceso principal emite `navigate` y la aplicación abre esa página: una
+notificación que nombra una tarea debe dejar a la persona frente a ella, no limitarse a
+traer la ventana al frente. Las alertas no pasan `route` y conservan su comportamiento.
+La ruta se valida contra la lista de páginas conocidas.
 
 El cuerpo sugiere la tarea **pendiente de complejidad `deep` con mayor prioridad**, y ante
 empate la de vencimiento más próximo:
@@ -390,7 +394,29 @@ empate la de vencimiento más próximo:
 Si no hay ninguna tarea profunda pendiente, el mensaje es genérico e invita a aprovechar el
 momento.
 
-### 9.4 Configuración
+### 9.4 Estado visible en el panel
+
+`FocusContext` expone `{ phase, suggestedTask }` y el Dashboard muestra un aviso mientras la
+ventana está activa, nombrando la tarea sugerida. La notificación es efímera: quien no
+estuviera mirando la pantalla en ese momento no llegaba a saber que su entorno acompañaba.
+
+El aviso muestra la tarea **registrada en la ventana**, no la que sería la mejor candidata
+en ese instante. Si divergieran —porque la persona completa la sugerida, o añade otra de
+mayor prioridad a mitad de ventana— el panel nombraría una tarea distinta de la que el
+reporte va a acreditar.
+
+### 9.5 Apagar la detección
+
+Con `focusEnabled` en falso, el estado vuelve a reposo de forma **explícita**
+(`resetFocusState`). No basta con dejar de evaluar: eso congelaba el estado en `active`, de
+modo que el aviso del panel quedaba pegado indefinidamente y, al reactivar, el primer
+instante no óptimo registraba una ventana que abarcaba todo el tiempo apagado, con su tarea
+rancia. Esa ventana inventada inflaba tanto el conteo como el aprovechamiento del enfoque.
+
+El enfriamiento se conserva al resetear: apagar y encender no debe servir para saltarse el
+intervalo entre avisos.
+
+### 9.6 Configuración
 
 Interruptor propio `focusEnabled` en la página de Configuración, independiente de
 `alertsEnabled`. El umbral de 10 minutos queda como constante del código en esta entrega.
